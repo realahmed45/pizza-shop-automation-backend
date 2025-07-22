@@ -248,6 +248,9 @@ async function processCustomerMessage(customer, messageText, message) {
       case "product_details":
         await handleProductDetails(customer, messageText, message);
         break;
+      case "item_added_menu":
+        await handleItemAddedMenu(customer, messageText, message);
+        break;
       case "delivery_details":
         await handleDeliveryDetails(customer, messageText, message);
         break;
@@ -260,6 +263,33 @@ async function processCustomerMessage(customer, messageText, message) {
     }
   } catch (error) {
     console.error("❌ Error processing customer message:", error);
+  }
+}
+
+// NEW: Handle the menu after adding items to cart
+async function handleItemAddedMenu(customer, messageText, message) {
+  const choice = messageText.trim();
+
+  switch (choice) {
+    case "1":
+      // Continue Shopping - go back to main menu
+      await sendMainMenu(customer, message);
+      break;
+    case "2":
+      // Proceed to Checkout
+      customer.conversationState = "delivery_details";
+      await customer.save();
+      await requestDeliveryDetails(customer, message);
+      break;
+    case "3":
+      // View Full Cart
+      await showCartAndCheckout(customer, message);
+      break;
+    default:
+      await message.reply(
+        `❌ *Invalid choice!*\n\nPlease select a valid option (1-3) from the menu above 👆\n\n🤖 *ChatBiz:* Our system guides you every step of the way!\n\n💡 Type *"0"* to return to main menu`
+      );
+      break;
   }
 }
 
@@ -796,7 +826,7 @@ async function handleProductDetails(customer, messageText, message) {
   }
 }
 
-// Add pizza to cart with enhanced logging
+// Add pizza to cart with enhanced logging - FIXED CONVERSATION STATE
 async function addPizzaToCart(customer, pizzaName, size, price, message) {
   try {
     if (!customer.cart) {
@@ -812,7 +842,10 @@ async function addPizzaToCart(customer, pizzaName, size, price, message) {
 
     customer.cart.items.push(cartItem);
     customer.cart.totalAmount += price;
-    customer.conversationState = "main_menu";
+
+    // FIXED: Set conversation state to item_added_menu instead of main_menu
+    customer.conversationState = "item_added_menu";
+    customer.currentContext = {}; // Clear current context
     await customer.save();
 
     let response = `✅ *ADDED TO CART!* ✅
@@ -822,9 +855,9 @@ async function addPizzaToCart(customer, pizzaName, size, price, message) {
 └─────────────────────────────┘
 
 🍕 *${pizzaName} - ${size}*
-💰 $${price.toFixed(2)}
+💰 ${price.toFixed(2)}
 
-🛒 *Cart Total: $${customer.cart.totalAmount.toFixed(2)}*
+🛒 *Cart Total: ${customer.cart.totalAmount.toFixed(2)}*
 
 *What would you like to do next?*
 
@@ -1034,7 +1067,7 @@ ${special.details || "Limited time offer with amazing savings!"}
 
 ${
   special.originalPrice
-    ? `🏷️ *Regular Price:* ${special.originalPrice.toFixed(2)}\n`
+    ? `🏷️ *Regular Price: ${special.originalPrice.toFixed(2)}*\n`
     : ""
 }
 💰 *Special Price: ${special.price.toFixed(2)}*
@@ -1067,7 +1100,7 @@ ${
   );
 }
 
-// Add salad to cart
+// Add salad to cart - FIXED CONVERSATION STATE
 async function addSaladToCart(customer, salad, message) {
   try {
     if (!customer.cart) {
@@ -1083,7 +1116,10 @@ async function addSaladToCart(customer, salad, message) {
 
     customer.cart.items.push(cartItem);
     customer.cart.totalAmount += salad.price;
-    customer.conversationState = "main_menu";
+
+    // FIXED: Set conversation state to item_added_menu instead of main_menu
+    customer.conversationState = "item_added_menu";
+    customer.currentContext = {}; // Clear current context
     await customer.save();
 
     let response = `✅ *ADDED TO CART!* ✅
@@ -1116,7 +1152,7 @@ async function addSaladToCart(customer, salad, message) {
   }
 }
 
-// Add beverage to cart
+// Add beverage to cart - FIXED CONVERSATION STATE
 async function addBeverageToCart(customer, beverage, message) {
   try {
     if (!customer.cart) {
@@ -1132,7 +1168,10 @@ async function addBeverageToCart(customer, beverage, message) {
 
     customer.cart.items.push(cartItem);
     customer.cart.totalAmount += beverage.price;
-    customer.conversationState = "main_menu";
+
+    // FIXED: Set conversation state to item_added_menu instead of main_menu
+    customer.conversationState = "item_added_menu";
+    customer.currentContext = {}; // Clear current context
     await customer.save();
 
     let response = `✅ *ADDED TO CART!* ✅
@@ -1167,7 +1206,7 @@ async function addBeverageToCart(customer, beverage, message) {
   }
 }
 
-// Add special to cart
+// Add special to cart - FIXED CONVERSATION STATE
 async function addSpecialToCart(customer, special, message) {
   try {
     if (!customer.cart) {
@@ -1183,7 +1222,10 @@ async function addSpecialToCart(customer, special, message) {
 
     customer.cart.items.push(cartItem);
     customer.cart.totalAmount += special.price;
-    customer.conversationState = "main_menu";
+
+    // FIXED: Set conversation state to item_added_menu instead of main_menu
+    customer.conversationState = "item_added_menu";
+    customer.currentContext = {}; // Clear current context
     await customer.save();
 
     let response = `✅ *ADDED TO CART!* ✅
@@ -1245,7 +1287,7 @@ async function showCartAndCheckout(customer, message) {
     const finalTotal = customer.cart.totalAmount + deliveryFee;
 
     if (deliveryFee > 0) {
-      response += `\n🚚 *Delivery Fee:* ${deliveryFee.toFixed(2)}`;
+      response += `\n🚚 *Delivery Fee: ${deliveryFee.toFixed(2)}*`;
       response += `\n💡 *FREE delivery on orders $25+*`;
       response += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
       response += `\n💰 *GRAND TOTAL: ${finalTotal.toFixed(2)}*`;
@@ -1294,6 +1336,7 @@ async function handleCartView(customer, messageText, message) {
         break;
       case "2":
         customer.cart = { items: [], totalAmount: 0 };
+        customer.conversationState = "main_menu";
         await customer.save();
         await message.reply(
           `🗑️ *Cart Cleared Successfully!*\n\n*Ready to start fresh?*\n\nType *"0"* to return to main menu and start ordering! 🛒`
