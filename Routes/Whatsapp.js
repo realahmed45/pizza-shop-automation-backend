@@ -1203,43 +1203,15 @@ async function handleCartView(customer, messageText, message) {
   }
 }
 
-// NEW HANDLER FOR POST-CART ACTIONS (using customization state)
-async function handleCustomization(customer, messageText, message) {
-  const choice = messageText.trim();
-
-  // Check if this is a post-cart action
-  if (customer.currentContext?.postCartAction) {
-    switch (choice) {
-      case "1":
-        // Continue Shopping - go to main menu
-        await sendMainMenu(customer, message);
-        break;
-      case "2":
-        // Proceed to Checkout
-        customer.conversationState = "delivery_details";
-        customer.currentContext = {};
-        await customer.save();
-        await requestDeliveryDetails(customer, message);
-        break;
-      case "3":
-        // View Full Cart
-        await showCartAndCheckout(customer, message);
-        break;
-      default:
-        await message.reply(
-          `❌ *Invalid choice!*\n\nPlease select a valid option (1-3) from the menu above 👆\n\n🤖 *ChatBiz:* Our system guides you every step of the way!\n\n💡 Type *"0"* to return to main menu`
-        );
-        break;
-    }
-  } else {
-    // Handle normal customization if needed
-    await sendMainMenu(customer, message);
-  }
-}
-
 // Update processCustomerMessage to include customization handler
 async function processCustomerMessage(customer, messageText, message) {
   try {
+    // SPECIAL HANDLER: Check if we're in post-add-to-cart state
+    if (customer.currentContext?.postCartAction) {
+      await handlePostAddActions(customer, messageText, message);
+      return;
+    }
+
     switch (customer.conversationState) {
       case "main_menu":
         await handleMainMenu(customer, messageText, message);
@@ -1258,9 +1230,6 @@ async function processCustomerMessage(customer, messageText, message) {
         break;
       case "product_details":
         await handleProductDetails(customer, messageText, message);
-        break;
-      case "customization":
-        await handleCustomization(customer, messageText, message);
         break;
       case "cart_view":
         await handleCartView(customer, messageText, message);
