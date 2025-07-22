@@ -1,5 +1,5 @@
 // ===============================================
-// SERVER.JS - Fixed with Proper Model Imports
+// SERVER.JS - With 24/7 Keep-Alive System for Render
 // ===============================================
 const express = require("express");
 const mongoose = require("mongoose");
@@ -8,6 +8,55 @@ const fs = require("fs");
 const multer = require("multer");
 
 const app = express();
+
+// ===============================================
+// KEEP-ALIVE SYSTEM FOR RENDER (24/7 UPTIME)
+// ===============================================
+const KEEP_ALIVE_INTERVAL = 14 * 60 * 1000; // 14 minutes (Render sleeps after 15 minutes)
+let APP_URL =
+  process.env.RENDER_EXTERNAL_URL ||
+  "https://pizza-shop-automation-backend-1.onrender.com";
+
+// Self-ping function to prevent sleeping
+const keepRenderAwake = () => {
+  if (process.env.NODE_ENV !== "production") {
+    console.log("🔧 Keep-alive disabled in development mode");
+    return;
+  }
+
+  setInterval(async () => {
+    try {
+      const response = await fetch(`${APP_URL}/health`);
+      const data = await response.json();
+      console.log(
+        `✅ Keep-alive ping successful - Status: ${
+          response.status
+        }, Uptime: ${Math.floor(data.uptime || 0)}s`
+      );
+    } catch (error) {
+      console.log(`❌ Keep-alive ping failed: ${error.message}`);
+      // Try backup ping to root endpoint
+      try {
+        await fetch(`${APP_URL}/`);
+        console.log(`✅ Backup ping successful`);
+      } catch (backupError) {
+        console.log(`❌ Backup ping also failed: ${backupError.message}`);
+      }
+    }
+  }, KEEP_ALIVE_INTERVAL);
+};
+
+// Auto-detect Render URL from request (with fallback to your specific URL)
+const detectAppUrl = (req) => {
+  if (req && req.get("host") && req.get("host").includes("onrender.com")) {
+    const protocol = req.get("x-forwarded-proto") || "https";
+    APP_URL = `${protocol}://${req.get("host")}`;
+    console.log(`🔍 Auto-detected App URL: ${APP_URL}`);
+  } else if (!APP_URL.includes("onrender.com")) {
+    APP_URL = "https://pizza-shop-automation-backend-1.onrender.com";
+    console.log(`🎯 Using configured Render URL: ${APP_URL}`);
+  }
+};
 
 // ===============================================
 // CORS - Allow Everything
@@ -110,20 +159,77 @@ const upload = multer({
 });
 
 // ===============================================
+// KEEP-ALIVE ROUTES
+// ===============================================
+
+// Enhanced health check endpoint
+app.get("/health", (req, res) => {
+  // Auto-detect URL on first request
+  if (APP_URL.includes("localhost") && req.get("host")) {
+    detectAppUrl(req);
+  }
+
+  res.json({
+    success: true,
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: {
+      used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + "MB",
+      total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + "MB",
+    },
+    database:
+      mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+    environment: process.env.NODE_ENV || "development",
+    keepAlive: process.env.NODE_ENV === "production" ? "active" : "disabled",
+    url: APP_URL,
+  });
+});
+
+// Ping endpoint for external monitoring
+app.get("/ping", (req, res) => {
+  res.json({
+    status: "pong",
+    time: Date.now(),
+    uptime: Math.floor(process.uptime()),
+  });
+});
+
+// Wake-up endpoint
+app.get("/wake", (req, res) => {
+  res.json({
+    message: "Service is awake!",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
+});
+
+// ===============================================
 // ROUTES
 // ===============================================
 
 // Root endpoint
 app.get("/", (req, res) => {
+  // Auto-detect URL on first request
+  if (APP_URL.includes("localhost") && req.get("host")) {
+    detectAppUrl(req);
+  }
+
   res.json({
     success: true,
-    message: "🌸 The Flower Studio API Server",
+    message: "🍕 ChatBiz Pizza Automation API Server",
+    status: "active",
+    keepAlive: process.env.NODE_ENV === "production" ? "enabled" : "disabled",
     endpoints: {
       dashboard: "/api/admin/dashboard",
       customers: "/api/admin/customers",
       orders: "/api/admin/orders",
       products: "/api/admin/products",
+      health: "/health",
+      ping: "/ping",
     },
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
   });
 });
 
@@ -133,6 +239,7 @@ app.get("/api/admin/test", (req, res) => {
     success: true,
     message: "API is working!",
     timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
   });
 });
 
@@ -546,17 +653,6 @@ try {
   console.log("⚠️ WhatsApp routes not found");
 }
 
-// Health check
-app.get("/health", (req, res) => {
-  res.json({
-    success: true,
-    status: "healthy",
-    database:
-      mongoose.connection.readyState === 1 ? "connected" : "disconnected",
-    timestamp: new Date().toISOString(),
-  });
-});
-
 // ===============================================
 // ERROR HANDLING
 // ===============================================
@@ -579,16 +675,42 @@ app.use((req, res) => {
 });
 
 // ===============================================
-// START SERVER
+// START SERVER WITH KEEP-ALIVE SYSTEM
 // ===============================================
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`🌸 Flower Studio API Server running on port ${PORT}`);
+  console.log(`🍕 ChatBiz Pizza Automation Server running on port ${PORT}`);
   console.log(`🌐 Dashboard: http://localhost:${PORT}/api/admin/dashboard`);
-  console.log(`🔧 Test: http://localhost:${PORT}/api/admin/test`);
+  console.log(`🔧 Health Check: http://localhost:${PORT}/health`);
+  console.log(`📱 WhatsApp Bot: Running automatically`);
   console.log(`✅ No CORS restrictions - All origins allowed`);
   console.log(`🔓 No authentication required`);
+
+  // Start keep-alive system after server is ready
+  setTimeout(() => {
+    if (process.env.NODE_ENV === "production") {
+      keepRenderAwake();
+      console.log("🚀 Keep-alive system activated for 24/7 uptime");
+      console.log(
+        `⏰ Pinging https://pizza-shop-automation-backend-1.onrender.com/health every 14 minutes`
+      );
+      console.log(`🎯 Your service will NEVER sleep on Render!`);
+    } else {
+      console.log("🔧 Keep-alive system disabled in development");
+    }
+  }, 30000); // Wait 30 seconds before starting keep-alive
+});
+
+// Graceful shutdown
+process.on("SIGTERM", () => {
+  console.log("👋 SIGTERM received. Shutting down gracefully...");
+  process.exit(0);
+});
+
+process.on("SIGINT", () => {
+  console.log("👋 SIGINT received. Shutting down gracefully...");
+  process.exit(0);
 });
 
 module.exports = app;
