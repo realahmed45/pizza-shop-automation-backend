@@ -739,10 +739,9 @@ async function handleProductDetails(customer, messageText, message) {
       const selectedSize = sizes[choice - 1];
       const selectedPrice = prices[choice - 1];
 
-      await addPizzaToCart(
+      await addToCartAndShowOptions(
         customer,
-        pizza.name,
-        selectedSize,
+        `${pizza.name} - ${selectedSize}`,
         selectedPrice,
         message
       );
@@ -755,9 +754,10 @@ async function handleProductDetails(customer, messageText, message) {
   // Handle salad selection
   else if (customer.currentContext.selectedSalad) {
     if (choice === 1) {
-      await addSaladToCart(
+      await addToCartAndShowOptions(
         customer,
-        customer.currentContext.selectedSalad,
+        customer.currentContext.selectedSalad.name,
+        customer.currentContext.selectedSalad.price,
         message
       );
     } else if (choice === 2) {
@@ -769,9 +769,10 @@ async function handleProductDetails(customer, messageText, message) {
   // Handle beverage selection
   else if (customer.currentContext.selectedBeverage) {
     if (choice === 1) {
-      await addBeverageToCart(
+      await addToCartAndShowOptions(
         customer,
-        customer.currentContext.selectedBeverage,
+        customer.currentContext.selectedBeverage.name,
+        customer.currentContext.selectedBeverage.price,
         message
       );
     } else if (choice === 2) {
@@ -783,9 +784,10 @@ async function handleProductDetails(customer, messageText, message) {
   // Handle special selection
   else if (customer.currentContext.selectedSpecial) {
     if (choice === 1) {
-      await addSpecialToCart(
+      await addToCartAndShowOptions(
         customer,
-        customer.currentContext.selectedSpecial,
+        customer.currentContext.selectedSpecial.name,
+        customer.currentContext.selectedSpecial.price,
         message
       );
     } else if (choice === 2) {
@@ -796,15 +798,15 @@ async function handleProductDetails(customer, messageText, message) {
   }
 }
 
-// Add pizza to cart with enhanced logging - FIXED TO USE CART_VIEW STATE
-async function addPizzaToCart(customer, pizzaName, size, price, message) {
+// UNIFIED ADD TO CART FUNCTION
+async function addToCartAndShowOptions(customer, productName, price, message) {
   try {
     if (!customer.cart) {
       customer.cart = { items: [], totalAmount: 0 };
     }
 
     const cartItem = {
-      productName: `${pizzaName} - ${size}`,
+      productName: productName,
       price: price,
       quantity: 1,
       customization: {},
@@ -813,10 +815,11 @@ async function addPizzaToCart(customer, pizzaName, size, price, message) {
     customer.cart.items.push(cartItem);
     customer.cart.totalAmount += price;
 
-    // FIXED: Use cart_view state and set a flag to show post-add menu
-    customer.conversationState = "cart_view";
+    // CRITICAL: Set state to customization with a special flag
+    customer.conversationState = "customization";
     customer.currentContext = {
-      showPostAddMenu: true, // Flag to show post-add menu instead of full cart
+      postCartAction: true,
+      lastAddedItem: productName,
     };
     await customer.save();
 
@@ -826,10 +829,10 @@ async function addPizzaToCart(customer, pizzaName, size, price, message) {
 │     *🛒 ORDER UPDATED 🛒*       │
 └─────────────────────────────┘
 
-🍕 *${pizzaName} - ${size}*
+🍕 *${productName}*
 💰 $${price.toFixed(2)}
 
-🛒 *Cart Total: $${customer.cart.totalAmount.toFixed(2)}*
+🛒 *Cart Total: ${customer.cart.totalAmount.toFixed(2)}*
 
 *What would you like to do next?*
 
@@ -844,9 +847,7 @@ async function addPizzaToCart(customer, pizzaName, size, price, message) {
 💡 Type *"0"* to return to main menu`;
 
     await message.reply(response);
-    console.log(
-      `🛒 Added ${pizzaName} - ${size} to cart for ${customer.phoneNumber}`
-    );
+    console.log(`🛒 Added ${productName} to cart for ${customer.phoneNumber}`);
   } catch (error) {
     console.error("❌ Error adding to cart:", error);
     await message.reply(
@@ -1072,173 +1073,6 @@ ${
   );
 }
 
-// Add salad to cart - FIXED TO USE CART_VIEW STATE
-async function addSaladToCart(customer, salad, message) {
-  try {
-    if (!customer.cart) {
-      customer.cart = { items: [], totalAmount: 0 };
-    }
-
-    const cartItem = {
-      productName: salad.name,
-      price: salad.price,
-      quantity: 1,
-      customization: {},
-    };
-
-    customer.cart.items.push(cartItem);
-    customer.cart.totalAmount += salad.price;
-
-    // FIXED: Use cart_view state and set a flag to show post-add menu
-    customer.conversationState = "cart_view";
-    customer.currentContext = {
-      showPostAddMenu: true, // Flag to show post-add menu instead of full cart
-    };
-    await customer.save();
-
-    let response = `✅ *ADDED TO CART!* ✅
-
-┌─────────────────────────────┐
-│     *🛒 ORDER UPDATED 🛒*       │
-└─────────────────────────────┘
-
-🥗 *${salad.name}*
-💰 ${salad.price.toFixed(2)}
-
-🛒 *Cart Total: ${customer.cart.totalAmount.toFixed(2)}*
-
-*What would you like to do next?*
-
-1️⃣ 🛒 *Continue Shopping*
-2️⃣ 🚚 *Proceed to Checkout*
-3️⃣ 👀 *View Full Cart*
-
-*Select an option (1-3)*
-
-🚀 *ChatBiz:* Fresh salad added instantly!
-
-💡 Type *"0"* to return to main menu`;
-
-    await message.reply(response);
-    console.log(`🥗 Added ${salad.name} to cart for ${customer.phoneNumber}`);
-  } catch (error) {
-    console.error("❌ Error adding salad to cart:", error);
-  }
-}
-
-// Add beverage to cart - FIXED TO USE CART_VIEW STATE
-async function addBeverageToCart(customer, beverage, message) {
-  try {
-    if (!customer.cart) {
-      customer.cart = { items: [], totalAmount: 0 };
-    }
-
-    const cartItem = {
-      productName: beverage.name,
-      price: beverage.price,
-      quantity: 1,
-      customization: {},
-    };
-
-    customer.cart.items.push(cartItem);
-    customer.cart.totalAmount += beverage.price;
-
-    // FIXED: Use cart_view state and set a flag to show post-add menu
-    customer.conversationState = "cart_view";
-    customer.currentContext = {
-      showPostAddMenu: true, // Flag to show post-add menu instead of full cart
-    };
-    await customer.save();
-
-    let response = `✅ *ADDED TO CART!* ✅
-
-┌─────────────────────────────┐
-│     *🛒 ORDER UPDATED 🛒*       │
-└─────────────────────────────┘
-
-🥤 *${beverage.name}*
-💰 ${beverage.price.toFixed(2)}
-
-🛒 *Cart Total: ${customer.cart.totalAmount.toFixed(2)}*
-
-*What would you like to do next?*
-
-1️⃣ 🛒 *Continue Shopping*
-2️⃣ 🚚 *Proceed to Checkout*
-3️⃣ 👀 *View Full Cart*
-
-*Select an option (1-3)*
-
-🚀 *ChatBiz:* Perfect drink choice!
-
-💡 Type *"0"* to return to main menu`;
-
-    await message.reply(response);
-    console.log(
-      `🥤 Added ${beverage.name} to cart for ${customer.phoneNumber}`
-    );
-  } catch (error) {
-    console.error("❌ Error adding beverage to cart:", error);
-  }
-}
-
-// Add special to cart - FIXED TO USE CART_VIEW STATE
-async function addSpecialToCart(customer, special, message) {
-  try {
-    if (!customer.cart) {
-      customer.cart = { items: [], totalAmount: 0 };
-    }
-
-    const cartItem = {
-      productName: special.name,
-      price: special.price,
-      quantity: 1,
-      customization: {},
-    };
-
-    customer.cart.items.push(cartItem);
-    customer.cart.totalAmount += special.price;
-
-    // FIXED: Use cart_view state and set a flag to show post-add menu
-    customer.conversationState = "cart_view";
-    customer.currentContext = {
-      showPostAddMenu: true, // Flag to show post-add menu instead of full cart
-    };
-    await customer.save();
-
-    let response = `✅ *ADDED TO CART!* ✅
-
-┌─────────────────────────────┐
-│     *🛒 ORDER UPDATED 🛒*       │
-└─────────────────────────────┘
-
-🔥 *${special.name}*
-📝 ${special.description}
-💰 ${special.price.toFixed(2)}
-
-🛒 *Cart Total: ${customer.cart.totalAmount.toFixed(2)}*
-
-*What would you like to do next?*
-
-1️⃣ 🛒 *Continue Shopping*
-2️⃣ 🚚 *Proceed to Checkout*
-3️⃣ 👀 *View Full Cart*
-
-*Select an option (1-3)*
-
-🚀 *ChatBiz:* Amazing deal secured!
-
-💡 Type *"0"* to return to main menu`;
-
-    await message.reply(response);
-    console.log(
-      `🔥 Added special ${special.name} to cart for ${customer.phoneNumber}`
-    );
-  } catch (error) {
-    console.error("❌ Error adding special to cart:", error);
-  }
-}
-
 // Show cart and checkout
 async function showCartAndCheckout(customer, message) {
   let response = `🛒 *YOUR SHOPPING CART* 🛒
@@ -1302,53 +1136,25 @@ async function showCartAndCheckout(customer, message) {
   );
 }
 
-// Handle cart view actions - UPDATED TO HANDLE POST-ADD MENU
+// FIXED CART VIEW HANDLER
 async function handleCartView(customer, messageText, message) {
   const choice = messageText.trim();
 
-  // Check if we're showing the post-add menu (3 options) or full cart view
-  const isPostAddMenu = customer.currentContext?.showPostAddMenu;
-
-  if (isPostAddMenu) {
-    // Handle post-add menu (Continue Shopping, Checkout, View Cart)
-    switch (choice) {
-      case "1":
-        // Continue Shopping - go back to main menu
-        await sendMainMenu(customer, message);
-        break;
-      case "2":
-        // Proceed to Checkout
-        customer.conversationState = "delivery_details";
-        customer.currentContext = {}; // Clear the flag
-        await customer.save();
-        await requestDeliveryDetails(customer, message);
-        break;
-      case "3":
-        // View Full Cart - show actual cart
-        customer.currentContext = {}; // Clear the flag
-        await customer.save();
-        await showCartAndCheckout(customer, message);
-        break;
-      default:
-        await message.reply(
-          `❌ *Invalid choice!*\n\nPlease select a valid option (1-3) from the menu above 👆\n\n🤖 *ChatBiz:* Our system guides you every step of the way!\n\n💡 Type *"0"* to return to main menu`
-        );
-        break;
-    }
-    return;
-  }
-
-  // Handle normal cart view actions
+  // Handle normal cart view actions (when cart has items)
   if (customer.cart && customer.cart.items && customer.cart.items.length > 0) {
     switch (choice) {
       case "1":
+        // Proceed to Checkout
         customer.conversationState = "delivery_details";
+        customer.currentContext = {};
         await customer.save();
         await requestDeliveryDetails(customer, message);
         break;
       case "2":
+        // Clear Cart
         customer.cart = { items: [], totalAmount: 0 };
         customer.conversationState = "main_menu";
+        customer.currentContext = {};
         await customer.save();
         await message.reply(
           `🗑️ *Cart Cleared Successfully!*\n\n*Ready to start fresh?*\n\nType *"0"* to return to main menu and start ordering! 🛒`
@@ -1356,6 +1162,7 @@ async function handleCartView(customer, messageText, message) {
         console.log(`🗑️ Cart cleared for ${customer.phoneNumber}`);
         break;
       case "3":
+        // Add More Items - go to main menu
         await sendMainMenu(customer, message);
         break;
       default:
@@ -1365,6 +1172,7 @@ async function handleCartView(customer, messageText, message) {
         break;
     }
   } else {
+    // Handle empty cart view
     switch (choice) {
       case "1":
         customer.conversationState = "browsing_pizzas";
@@ -1392,6 +1200,80 @@ async function handleCartView(customer, messageText, message) {
         );
         break;
     }
+  }
+}
+
+// NEW HANDLER FOR POST-CART ACTIONS (using customization state)
+async function handleCustomization(customer, messageText, message) {
+  const choice = messageText.trim();
+
+  // Check if this is a post-cart action
+  if (customer.currentContext?.postCartAction) {
+    switch (choice) {
+      case "1":
+        // Continue Shopping - go to main menu
+        await sendMainMenu(customer, message);
+        break;
+      case "2":
+        // Proceed to Checkout
+        customer.conversationState = "delivery_details";
+        customer.currentContext = {};
+        await customer.save();
+        await requestDeliveryDetails(customer, message);
+        break;
+      case "3":
+        // View Full Cart
+        await showCartAndCheckout(customer, message);
+        break;
+      default:
+        await message.reply(
+          `❌ *Invalid choice!*\n\nPlease select a valid option (1-3) from the menu above 👆\n\n🤖 *ChatBiz:* Our system guides you every step of the way!\n\n💡 Type *"0"* to return to main menu`
+        );
+        break;
+    }
+  } else {
+    // Handle normal customization if needed
+    await sendMainMenu(customer, message);
+  }
+}
+
+// Update processCustomerMessage to include customization handler
+async function processCustomerMessage(customer, messageText, message) {
+  try {
+    switch (customer.conversationState) {
+      case "main_menu":
+        await handleMainMenu(customer, messageText, message);
+        break;
+      case "browsing_pizzas":
+        await handlePizzaBrowsing(customer, messageText, message);
+        break;
+      case "browsing_salads":
+        await handleSaladBrowsing(customer, messageText, message);
+        break;
+      case "browsing_beverages":
+        await handleBeverageBrowsing(customer, messageText, message);
+        break;
+      case "browsing_specials":
+        await handleSpecialsBrowsing(customer, messageText, message);
+        break;
+      case "product_details":
+        await handleProductDetails(customer, messageText, message);
+        break;
+      case "customization":
+        await handleCustomization(customer, messageText, message);
+        break;
+      case "cart_view":
+        await handleCartView(customer, messageText, message);
+        break;
+      case "delivery_details":
+        await handleDeliveryDetails(customer, messageText, message);
+        break;
+      default:
+        await sendMainMenu(customer, message);
+        break;
+    }
+  } catch (error) {
+    console.error("❌ Error processing customer message:", error);
   }
 }
 
@@ -1646,6 +1528,7 @@ async function showPastaMenu(customer, message) {
     } else {
       // Fallback items
       response += `
+1️⃣ *Spaghetti Carbonara* - $14.99
    🥓 Creamy sauce with bacon & parmesan
 
 2️⃣ *Fettuccine Alfredo* - $13.99
