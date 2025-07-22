@@ -37,7 +37,7 @@ client.on("disconnected", () => {
   console.log("⚠️ WhatsApp disconnected - Reconnecting...");
 });
 
-// Main Message Handler - BULLETPROOF FIX
+// Main Message Handler - REMOVED COMPLEX FLAG LOGIC
 client.on("message", async (message) => {
   try {
     const phoneNumber = message.from.replace("@c.us", "");
@@ -74,42 +74,6 @@ client.on("message", async (message) => {
     if (messageText === "menu" || messageText === "start") {
       await handleExistingCustomerMenu(phoneNumber, message);
       return;
-    }
-
-    // CRITICAL FIX: Check for post-cart actions FIRST before everything else
-    if (
-      customer.currentContext &&
-      customer.currentContext.postCartAction === true
-    ) {
-      console.log(
-        `🎯 DETECTED POST-CART ACTION for ${phoneNumber}, message: "${messageText}"`
-      );
-
-      if (messageText === "1") {
-        console.log(`✅ Continue Shopping selected`);
-        customer.currentContext = {};
-        await customer.save();
-        await sendMainMenu(customer, message);
-        return;
-      } else if (messageText === "2") {
-        console.log(`✅ Proceed to Checkout selected - GOING TO DELIVERY`);
-        customer.conversationState = "delivery_details";
-        customer.currentContext = {};
-        await customer.save();
-        await requestDeliveryDetails(customer, message);
-        return;
-      } else if (messageText === "3") {
-        console.log(`✅ View Cart selected`);
-        customer.currentContext = {};
-        await customer.save();
-        await showCartAndCheckout(customer, message);
-        return;
-      } else {
-        await message.reply(
-          `❌ *Invalid choice!*\n\nPlease select a valid option (1-3) from the menu above 👆\n\n🤖 *ChatBiz:* Our system guides you every step of the way!\n\n💡 Type *"0"* to return to main menu`
-        );
-        return;
-      }
     }
 
     // Process existing conversations normally
