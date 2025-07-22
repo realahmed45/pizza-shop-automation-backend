@@ -715,7 +715,7 @@ async function sendProductImage(product, phoneNumber) {
   }
 }
 
-// Handle product details (pizza size selection)
+// Handle product details (pizza size selection) - FIXED PRICE VALIDATION
 async function handleProductDetails(customer, messageText, message) {
   const choice = parseInt(messageText.trim());
 
@@ -729,15 +729,27 @@ async function handleProductDetails(customer, messageText, message) {
         'Large (14")',
         'Extra Large (16")',
       ];
-      const prices = [
-        pizza.basePrice,
-        pizza.basePrice + 4,
-        pizza.basePrice + 8,
-        pizza.basePrice + 12,
-      ];
+
+      // CRITICAL: Ensure basePrice is a valid number
+      const basePrice = Number(pizza.basePrice);
+      if (isNaN(basePrice)) {
+        console.error(
+          `❌ Invalid base price for pizza ${pizza.name}: ${pizza.basePrice}`
+        );
+        await message.reply(
+          '❌ *Price error for this item* \n\nPlease try selecting another item!\n\n💡 Type *"0"* to return to main menu'
+        );
+        return;
+      }
+
+      const prices = [basePrice, basePrice + 4, basePrice + 8, basePrice + 12];
 
       const selectedSize = sizes[choice - 1];
       const selectedPrice = prices[choice - 1];
+
+      console.log(
+        `🍕 Pizza selection: ${pizza.name} - ${selectedSize} - Base: ${basePrice} - Final: ${selectedPrice}`
+      );
 
       await addToCartAndShowOptions(
         customer,
@@ -754,12 +766,18 @@ async function handleProductDetails(customer, messageText, message) {
   // Handle salad selection
   else if (customer.currentContext.selectedSalad) {
     if (choice === 1) {
-      await addToCartAndShowOptions(
-        customer,
-        customer.currentContext.selectedSalad.name,
-        customer.currentContext.selectedSalad.price,
-        message
-      );
+      const salad = customer.currentContext.selectedSalad;
+      const saladPrice = Number(salad.price);
+
+      if (isNaN(saladPrice)) {
+        console.error(`❌ Invalid salad price: ${salad.price}`);
+        await message.reply(
+          '❌ *Price error for this item* \n\nPlease try selecting another item!\n\n💡 Type *"0"* to return to main menu'
+        );
+        return;
+      }
+
+      await addToCartAndShowOptions(customer, salad.name, saladPrice, message);
     } else if (choice === 2) {
       customer.conversationState = "browsing_salads";
       await customer.save();
@@ -769,10 +787,21 @@ async function handleProductDetails(customer, messageText, message) {
   // Handle beverage selection
   else if (customer.currentContext.selectedBeverage) {
     if (choice === 1) {
+      const beverage = customer.currentContext.selectedBeverage;
+      const beveragePrice = Number(beverage.price);
+
+      if (isNaN(beveragePrice)) {
+        console.error(`❌ Invalid beverage price: ${beverage.price}`);
+        await message.reply(
+          '❌ *Price error for this item* \n\nPlease try selecting another item!\n\n💡 Type *"0"* to return to main menu'
+        );
+        return;
+      }
+
       await addToCartAndShowOptions(
         customer,
-        customer.currentContext.selectedBeverage.name,
-        customer.currentContext.selectedBeverage.price,
+        beverage.name,
+        beveragePrice,
         message
       );
     } else if (choice === 2) {
@@ -784,10 +813,21 @@ async function handleProductDetails(customer, messageText, message) {
   // Handle special selection
   else if (customer.currentContext.selectedSpecial) {
     if (choice === 1) {
+      const special = customer.currentContext.selectedSpecial;
+      const specialPrice = Number(special.price);
+
+      if (isNaN(specialPrice)) {
+        console.error(`❌ Invalid special price: ${special.price}`);
+        await message.reply(
+          '❌ *Price error for this item* \n\nPlease try selecting another item!\n\n💡 Type *"0"* to return to main menu'
+        );
+        return;
+      }
+
       await addToCartAndShowOptions(
         customer,
-        customer.currentContext.selectedSpecial.name,
-        customer.currentContext.selectedSpecial.price,
+        special.name,
+        specialPrice,
         message
       );
     } else if (choice === 2) {
