@@ -1254,19 +1254,13 @@ async function handleProductDetails(customer, messageText, message) {
       await showPizzaMenu(customer, message);
     }
   }
-  // Handle salad selection
+  // Handle salad selection - IMPROVED PRICE HANDLING
   else if (customer.currentContext.selectedSalad) {
     if (choice === 1) {
       const salad = customer.currentContext.selectedSalad;
-      const saladPrice = Number(salad.price);
 
-      if (isNaN(saladPrice)) {
-        console.error(`❌ Invalid salad price: ${salad.price}`);
-        await message.reply(
-          '❌ *Price error for this item* \n\nPlease try selecting another item!\n\n💡 Type *"0"* to return to main menu'
-        );
-        return;
-      }
+      // IMPROVED PRICE PARSING
+      let saladPrice = parsePrice(salad.price, salad.name, 12.99);
 
       await addToCartAndShowOptions(customer, salad.name, saladPrice, message);
     } else if (choice === 2) {
@@ -1275,19 +1269,11 @@ async function handleProductDetails(customer, messageText, message) {
       await showSaladMenu(customer, message);
     }
   }
-  // Handle beverage selection
+  // Handle beverage selection - IMPROVED PRICE HANDLING
   else if (customer.currentContext.selectedBeverage) {
     if (choice === 1) {
       const beverage = customer.currentContext.selectedBeverage;
-      const beveragePrice = Number(beverage.price);
-
-      if (isNaN(beveragePrice)) {
-        console.error(`❌ Invalid beverage price: ${beverage.price}`);
-        await message.reply(
-          '❌ *Price error for this item* \n\nPlease try selecting another item!\n\n💡 Type *"0"* to return to main menu'
-        );
-        return;
-      }
+      let beveragePrice = parsePrice(beverage.price, beverage.name, 2.99);
 
       await addToCartAndShowOptions(
         customer,
@@ -1301,19 +1287,11 @@ async function handleProductDetails(customer, messageText, message) {
       await showBeverageMenu(customer, message);
     }
   }
-  // Handle special selection
+  // Handle special selection - IMPROVED PRICE HANDLING
   else if (customer.currentContext.selectedSpecial) {
     if (choice === 1) {
       const special = customer.currentContext.selectedSpecial;
-      const specialPrice = Number(special.price);
-
-      if (isNaN(specialPrice)) {
-        console.error(`❌ Invalid special price: ${special.price}`);
-        await message.reply(
-          '❌ *Price error for this item* \n\nPlease try selecting another item!\n\n💡 Type *"0"* to return to main menu'
-        );
-        return;
-      }
+      let specialPrice = parsePrice(special.price, special.name, 19.99);
 
       await addToCartAndShowOptions(
         customer,
@@ -1327,19 +1305,11 @@ async function handleProductDetails(customer, messageText, message) {
       await showSpecialsMenu(customer, message);
     }
   }
-  // Handle pasta selection
+  // Handle pasta selection - IMPROVED PRICE HANDLING
   else if (customer.currentContext.selectedPasta) {
     if (choice === 1) {
       const pasta = customer.currentContext.selectedPasta;
-      const pastaPrice = Number(pasta.price);
-
-      if (isNaN(pastaPrice)) {
-        console.error(`❌ Invalid pasta price: ${pasta.price}`);
-        await message.reply(
-          '❌ *Price error for this item* \n\nPlease try selecting another item!\n\n💡 Type *"0"* to return to main menu'
-        );
-        return;
-      }
+      let pastaPrice = parsePrice(pasta.price, pasta.name, 14.99);
 
       await addToCartAndShowOptions(customer, pasta.name, pastaPrice, message);
     } else if (choice === 2) {
@@ -1348,19 +1318,11 @@ async function handleProductDetails(customer, messageText, message) {
       await showPastaMenu(customer, message);
     }
   }
-  // Handle appetizer selection
+  // Handle appetizer selection - IMPROVED PRICE HANDLING
   else if (customer.currentContext.selectedAppetizer) {
     if (choice === 1) {
       const appetizer = customer.currentContext.selectedAppetizer;
-      const appetizerPrice = Number(appetizer.price);
-
-      if (isNaN(appetizerPrice)) {
-        console.error(`❌ Invalid appetizer price: ${appetizer.price}`);
-        await message.reply(
-          '❌ *Price error for this item* \n\nPlease try selecting another item!\n\n💡 Type *"0"* to return to main menu'
-        );
-        return;
-      }
+      let appetizerPrice = parsePrice(appetizer.price, appetizer.name, 7.99);
 
       await addToCartAndShowOptions(
         customer,
@@ -1824,6 +1786,37 @@ async function sendMainMenu(customer, message) {
 💡 Type *"0"* anytime to return to this menu`;
 
   await message.reply(menuMessage);
+}
+
+// Helper function to parse and validate prices
+function parsePrice(price, itemName, defaultPrice = 9.99) {
+  let parsedPrice;
+
+  console.log(
+    `💰 Parsing price for ${itemName}: ${price} (type: ${typeof price})`
+  );
+
+  if (typeof price === "number") {
+    parsedPrice = price;
+  } else if (typeof price === "string") {
+    // Remove currency symbols, spaces, and convert to number
+    parsedPrice = parseFloat(price.replace(/[$,\s]/g, ""));
+  } else {
+    parsedPrice = defaultPrice;
+    console.log(`🔧 Using default price for ${itemName}: ${defaultPrice}`);
+  }
+
+  // Final validation
+  if (isNaN(parsedPrice) || parsedPrice <= 0) {
+    console.error(
+      `❌ Invalid price for ${itemName}: ${price} -> ${parsedPrice}`
+    );
+    parsedPrice = defaultPrice;
+    console.log(`🔧 Fallback to default price: ${defaultPrice}`);
+  }
+
+  console.log(`✅ Final price for ${itemName}: ${parsedPrice}`);
+  return parsedPrice;
 }
 
 // Initialize the WhatsApp client when the module loads
