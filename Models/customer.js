@@ -1,5 +1,5 @@
 // ===============================================
-// MODELS/CUSTOMER.JS - Updated Customer Schema with Restaurant States
+// MODELS/CUSTOMER.JS - UPDATED Customer Schema with All Restaurant States
 // ===============================================
 const mongoose = require("mongoose");
 
@@ -28,17 +28,17 @@ const customerSchema = new mongoose.Schema(
         "browsing_cakes",
         "browsing_gifts",
         "browsing_combos",
-        // NEW RESTAURANT STATES
+        // RESTAURANT STATES
         "browsing_pizzas",
         "browsing_salads",
         "browsing_beverages",
         "browsing_specials",
-        "browsing_appetizers",
+        "browsing_appetizers", // ADDED
         "browsing_desserts",
-        "browsing_pasta",
+        "browsing_pasta", // ADDED
         // COMMON STATES
         "product_details",
-        "customization",
+        "customization", // CRITICAL: This handles post-cart actions
         "delivery_details",
         "cart_view",
         "payment",
@@ -56,11 +56,23 @@ const customerSchema = new mongoose.Schema(
         basePrice: Number,
         description: String,
         images: [mongoose.Schema.Types.Mixed],
+        specifications: mongoose.Schema.Types.Mixed,
       },
+      selectedSalad: mongoose.Schema.Types.Mixed, // ADDED
+      selectedBeverage: mongoose.Schema.Types.Mixed, // ADDED
+      selectedSpecial: mongoose.Schema.Types.Mixed, // ADDED
+      selectedPasta: mongoose.Schema.Types.Mixed, // ADDED
+      selectedAppetizer: mongoose.Schema.Types.Mixed, // ADDED
       salads: [mongoose.Schema.Types.Mixed],
       beverages: [mongoose.Schema.Types.Mixed],
+      specials: [mongoose.Schema.Types.Mixed], // ADDED
+      pasta: [mongoose.Schema.Types.Mixed], // ADDED
+      appetizers: [mongoose.Schema.Types.Mixed], // ADDED
+      defaultSpecials: [mongoose.Schema.Types.Mixed], // ADDED
       saladList: [String],
       beverageList: [String],
+      specialsList: [String], // ADDED
+      lastAddedItem: String, // ADDED for tracking
       customization: {
         message: String,
         cardMessage: String,

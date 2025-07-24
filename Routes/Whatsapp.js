@@ -1,5 +1,5 @@
 // ===============================================
-// ROUTES/WHATSAPP.JS - Complete Professional Pizza Shop WhatsApp Automation
+// ROUTES/WHATSAPP.JS - COMPLETE Professional Pizza Shop WhatsApp Automation
 // ===============================================
 const express = require("express");
 const { Client, MessageMedia, LocalAuth } = require("whatsapp-web.js");
@@ -37,7 +37,7 @@ client.on("disconnected", () => {
   console.log("⚠️ WhatsApp disconnected - Reconnecting...");
 });
 
-// Main Message Handler - REMOVED COMPLEX FLAG LOGIC
+// Main Message Handler
 client.on("message", async (message) => {
   try {
     const phoneNumber = message.from.replace("@c.us", "");
@@ -229,6 +229,10 @@ async function handleBackToMainMenu(phoneNumber, message) {
 // Process customer messages based on conversation state
 async function processCustomerMessage(customer, messageText, message) {
   try {
+    console.log(
+      `🔍 Processing message: "${messageText}" | State: ${customer.conversationState}`
+    );
+
     switch (customer.conversationState) {
       case "main_menu":
         await handleMainMenu(customer, messageText, message);
@@ -245,8 +249,17 @@ async function processCustomerMessage(customer, messageText, message) {
       case "browsing_specials":
         await handleSpecialsBrowsing(customer, messageText, message);
         break;
+      case "browsing_pasta":
+        await handlePastaBrowsing(customer, messageText, message);
+        break;
+      case "browsing_appetizers":
+        await handleAppetizersBrowsing(customer, messageText, message);
+        break;
       case "product_details":
         await handleProductDetails(customer, messageText, message);
+        break;
+      case "customization":
+        await handlePostCartActions(customer, messageText, message);
         break;
       case "cart_view":
         await handleCartView(customer, messageText, message);
@@ -255,11 +268,17 @@ async function processCustomerMessage(customer, messageText, message) {
         await handleDeliveryDetails(customer, messageText, message);
         break;
       default:
+        console.log(
+          `⚠️ Unknown state: ${customer.conversationState} - Sending main menu`
+        );
         await sendMainMenu(customer, message);
         break;
     }
   } catch (error) {
     console.error("❌ Error processing customer message:", error);
+    await message.reply(
+      '❌ *Something went wrong!*\n\nType *"0"* to return to main menu'
+    );
   }
 }
 
@@ -302,10 +321,42 @@ async function handleMainMenu(customer, messageText, message) {
   }
 }
 
-// Show pizza menu - REAL DATABASE PRODUCTS
+// Handle post-cart actions (Continue Shopping, Checkout, View Cart)
+async function handlePostCartActions(customer, messageText, message) {
+  const choice = messageText.trim();
+
+  console.log(`🛒 Handling post-cart action: ${choice}`);
+
+  switch (choice) {
+    case "1":
+      // Continue Shopping - go back to main menu
+      customer.conversationState = "main_menu";
+      customer.currentContext = {};
+      await customer.save();
+      await sendMainMenu(customer, message);
+      break;
+    case "2":
+      // Proceed to Checkout
+      customer.conversationState = "delivery_details";
+      customer.currentContext = {};
+      await customer.save();
+      await requestDeliveryDetails(customer, message);
+      break;
+    case "3":
+      // View Full Cart
+      await showCartAndCheckout(customer, message);
+      break;
+    default:
+      await message.reply(
+        `❌ *Invalid choice!*\n\nPlease select option 1, 2, or 3 👆\n\n🤖 *ChatBiz:* Choose your next step!\n\n💡 Type *"0"* to return to main menu`
+      );
+      break;
+  }
+}
+
+// Show pizza menu
 async function showPizzaMenu(customer, message) {
   try {
-    // Fetch real pizzas from database
     const pizzas = await Product.find({
       category: "pizzas",
       availability: true,
@@ -365,7 +416,7 @@ Please check back in a moment!\n`;
   }
 }
 
-// Show salad menu - REAL DATABASE PRODUCTS
+// Show salad menu
 async function showSaladMenu(customer, message) {
   try {
     const salads = await Product.find({
@@ -424,7 +475,7 @@ Our healthy options will be available shortly!\n`;
   }
 }
 
-// Show beverage menu - REAL DATABASE PRODUCTS
+// Show beverage menu
 async function showBeverageMenu(customer, message) {
   try {
     const beverages = await Product.find({
@@ -484,7 +535,7 @@ Refreshing options coming soon!\n`;
   }
 }
 
-// Show specials menu - REAL DATABASE PRODUCTS + COMBOS
+// Show specials menu
 async function showSpecialsMenu(customer, message) {
   try {
     const specials = await Product.find({
@@ -584,7 +635,153 @@ async function showSpecialsMenu(customer, message) {
   }
 }
 
-// Handle pizza browsing - SHOW REAL PRODUCT DETAILS
+// Show pasta menu
+async function showPastaMenu(customer, message) {
+  try {
+    const pasta = await Product.find({
+      category: "pasta",
+      availability: true,
+    }).limit(8);
+
+    let response = `🍝 *PASTA & ITALIAN CLASSICS* 🍝
+
+┌─────────────────────────────┐
+│    *🇮🇹 AUTHENTIC ITALIAN 🇮🇹*   │
+└─────────────────────────────┘
+`;
+
+    if (pasta.length > 0) {
+      pasta.forEach((item, index) => {
+        response += `\n${index + 1}️⃣ *${item.name}* - $${item.price.toFixed(
+          2
+        )}`;
+        response += `\n   📝 ${item.description.substring(0, 40)}...`;
+      });
+
+      customer.currentContext.pasta = pasta;
+    } else {
+      // Fallback items
+      const defaultPasta = [
+        {
+          name: "Spaghetti Carbonara",
+          price: 14.99,
+          description: "Creamy sauce with bacon & parmesan cheese",
+        },
+        {
+          name: "Fettuccine Alfredo",
+          price: 13.99,
+          description: "Rich garlic cream sauce with fresh herbs",
+        },
+        {
+          name: "Penne Arrabbiata",
+          price: 12.99,
+          description: "Spicy tomato sauce with Italian herbs",
+        },
+        {
+          name: "Lasagna Classic",
+          price: 16.99,
+          description: "Layered with meat sauce & three cheeses",
+        },
+      ];
+
+      defaultPasta.forEach((item, index) => {
+        response += `\n${index + 1}️⃣ *${item.name}* - $${item.price.toFixed(
+          2
+        )}`;
+        response += `\n   📝 ${item.description}`;
+      });
+
+      customer.currentContext.pasta = defaultPasta;
+    }
+
+    response += `\n\n${(pasta.length || 4) + 1}️⃣ 🔙 *Back to Pizza Menu*`;
+    response += `\n\n*Type the number to view details & order!* 🛒`;
+    response += `\n\n💡 Type *"0"* to return to main menu`;
+
+    await customer.save();
+    await message.reply(response);
+  } catch (error) {
+    console.error("❌ Error loading pasta menu:", error);
+    await message.reply(
+      '❌ *Pasta menu temporarily unavailable*\n\nPlease try again!\n\n💡 Type *"0"* to return to main menu'
+    );
+  }
+}
+
+// Show appetizer menu
+async function showAppetizerMenu(customer, message) {
+  try {
+    const appetizers = await Product.find({
+      category: "appetizers",
+      availability: true,
+    }).limit(8);
+
+    let response = `🥖 *APPETIZERS & SIDES* 🥖
+
+┌─────────────────────────────┐
+│   *🍗 PERFECT STARTERS 🍗*      │
+└─────────────────────────────┘
+`;
+
+    if (appetizers.length > 0) {
+      appetizers.forEach((item, index) => {
+        response += `\n${index + 1}️⃣ *${item.name}* - $${item.price.toFixed(
+          2
+        )}`;
+        response += `\n   📝 ${item.description.substring(0, 40)}...`;
+      });
+
+      customer.currentContext.appetizers = appetizers;
+    } else {
+      // Fallback items
+      const defaultAppetizers = [
+        {
+          name: "Garlic Bread",
+          price: 5.99,
+          description: "Warm bread with garlic butter and herbs",
+        },
+        {
+          name: "Cheese Breadsticks",
+          price: 7.99,
+          description: "Mozzarella-filled breadsticks with marinara",
+        },
+        {
+          name: "Buffalo Wings",
+          price: 9.99,
+          description: "Spicy wings with ranch dipping sauce",
+        },
+        {
+          name: "Mozzarella Sticks",
+          price: 6.99,
+          description: "Crispy fried cheese sticks with marinara",
+        },
+      ];
+
+      defaultAppetizers.forEach((item, index) => {
+        response += `\n${index + 1}️⃣ *${item.name}* - $${item.price.toFixed(
+          2
+        )}`;
+        response += `\n   📝 ${item.description}`;
+      });
+
+      customer.currentContext.appetizers = defaultAppetizers;
+    }
+
+    response += `\n\n${(appetizers.length || 4) + 1}️⃣ 🔙 *Back to Pizza Menu*`;
+    response += `\n\n*Type the number to view details & order!* 🛒`;
+    response += `\n\n💡 Type *"0"* to return to main menu`;
+
+    await customer.save();
+    await message.reply(response);
+  } catch (error) {
+    console.error("❌ Error loading appetizer menu:", error);
+    await message.reply(
+      '❌ *Appetizer menu temporarily unavailable*\n\nPlease try again!\n\n💡 Type *"0"* to return to main menu'
+    );
+  }
+}
+
+// Handle pizza browsing
 async function handlePizzaBrowsing(customer, messageText, message) {
   const choice = parseInt(messageText.trim());
   const products = customer.currentContext?.products || [];
@@ -593,9 +790,13 @@ async function handlePizzaBrowsing(customer, messageText, message) {
     const selectedPizza = products[choice - 1];
     await showPizzaDetails(customer, selectedPizza, message);
   } else if (choice === products.length + 1) {
+    customer.conversationState = "browsing_pasta";
+    await customer.save();
     await showPastaMenu(customer, message);
   } else if (choice === products.length + 2) {
-    await showSidesMenu(customer, message);
+    customer.conversationState = "browsing_appetizers";
+    await customer.save();
+    await showAppetizerMenu(customer, message);
   } else {
     await message.reply(
       `❌ *Invalid choice!*\n\nPlease select option 1-${
@@ -605,7 +806,99 @@ async function handlePizzaBrowsing(customer, messageText, message) {
   }
 }
 
-// Show pizza details with image and size options - FROM DATABASE
+// Handle salad browsing
+async function handleSaladBrowsing(customer, messageText, message) {
+  const choice = parseInt(messageText.trim());
+  const salads = customer.currentContext?.salads || [];
+
+  if (choice >= 1 && choice <= salads.length) {
+    const selectedSalad = salads[choice - 1];
+    await showSaladDetails(customer, selectedSalad, message);
+  } else {
+    await message.reply(
+      `❌ *Invalid choice!*\n\nPlease select option 1-${salads.length} from the salad menu 👆\n\n🤖 *ChatBiz:* We help you find the perfect salad!\n\n💡 Type *"0"* to return to main menu`
+    );
+  }
+}
+
+// Handle beverage browsing
+async function handleBeverageBrowsing(customer, messageText, message) {
+  const choice = parseInt(messageText.trim());
+  const beverages = customer.currentContext?.beverages || [];
+
+  if (choice >= 1 && choice <= beverages.length) {
+    const selectedBeverage = beverages[choice - 1];
+    await showBeverageDetails(customer, selectedBeverage, message);
+  } else {
+    await message.reply(
+      `❌ *Invalid choice!*\n\nPlease select option 1-${beverages.length} from the beverage menu 👆\n\n🤖 *ChatBiz:* Perfect drink pairings await!\n\n💡 Type *"0"* to return to main menu`
+    );
+  }
+}
+
+// Handle specials browsing
+async function handleSpecialsBrowsing(customer, messageText, message) {
+  const choice = parseInt(messageText.trim());
+  const specials =
+    customer.currentContext?.specials ||
+    customer.currentContext?.defaultSpecials ||
+    [];
+
+  if (choice >= 1 && choice <= specials.length) {
+    const selectedSpecial = specials[choice - 1];
+    await showSpecialDetails(customer, selectedSpecial, message);
+  } else {
+    await message.reply(
+      `❌ *Invalid choice!*\n\nPlease select option 1-${specials.length} from the specials menu 👆\n\n🤖 *ChatBiz:* Amazing deals waiting for you!\n\n💡 Type *"0"* to return to main menu`
+    );
+  }
+}
+
+// Handle pasta browsing
+async function handlePastaBrowsing(customer, messageText, message) {
+  const choice = parseInt(messageText.trim());
+  const pasta = customer.currentContext?.pasta || [];
+
+  if (choice >= 1 && choice <= pasta.length) {
+    const selectedPasta = pasta[choice - 1];
+    await showPastaDetails(customer, selectedPasta, message);
+  } else if (choice === pasta.length + 1) {
+    // Back to pizza menu
+    customer.conversationState = "browsing_pizzas";
+    await customer.save();
+    await showPizzaMenu(customer, message);
+  } else {
+    await message.reply(
+      `❌ *Invalid choice!*\n\nPlease select option 1-${
+        pasta.length + 1
+      } from the pasta menu 👆\n\n🤖 *ChatBiz:* Authentic Italian flavors await!\n\n💡 Type *"0"* to return to main menu`
+    );
+  }
+}
+
+// Handle appetizers browsing
+async function handleAppetizersBrowsing(customer, messageText, message) {
+  const choice = parseInt(messageText.trim());
+  const appetizers = customer.currentContext?.appetizers || [];
+
+  if (choice >= 1 && choice <= appetizers.length) {
+    const selectedAppetizer = appetizers[choice - 1];
+    await showAppetizerDetails(customer, selectedAppetizer, message);
+  } else if (choice === appetizers.length + 1) {
+    // Back to pizza menu
+    customer.conversationState = "browsing_pizzas";
+    await customer.save();
+    await showPizzaMenu(customer, message);
+  } else {
+    await message.reply(
+      `❌ *Invalid choice!*\n\nPlease select option 1-${
+        appetizers.length + 1
+      } from the appetizers menu 👆\n\n🤖 *ChatBiz:* Perfect starters for your meal!\n\n💡 Type *"0"* to return to main menu`
+    );
+  }
+}
+
+// Show pizza details with size options
 async function showPizzaDetails(customer, pizza, message) {
   customer.conversationState = "product_details";
   customer.currentContext.selectedPizza = {
@@ -650,16 +943,16 @@ ${
 
 💰 *SIZE & PRICING:*
 
-1️⃣ *Small (10")* - $${pizza.price.toFixed(2)}
+1️⃣ *Small (10")* - ${pizza.price.toFixed(2)}
    👥 Perfect for 1-2 people
 
-2️⃣ *Medium (12")* - $${(pizza.price + 4).toFixed(2)}
+2️⃣ *Medium (12")* - ${(pizza.price + 4).toFixed(2)}
    👥 Great for 2-3 people
 
-3️⃣ *Large (14")* - $${(pizza.price + 8).toFixed(2)}
+3️⃣ *Large (14")* - ${(pizza.price + 8).toFixed(2)}
    👥 Feeds 3-4 people
 
-4️⃣ *Extra Large (16")* - $${(pizza.price + 12).toFixed(2)}
+4️⃣ *Extra Large (16")* - ${(pizza.price + 12).toFixed(2)}
    👥 Perfect for sharing 4-5 people
 
 5️⃣ *🔙 Back to Pizza Menu*
@@ -671,51 +964,251 @@ ${
 💡 Type *"0"* to return to main menu`;
 
   await message.reply(response);
-
   console.log(`🍕 Showed details for ${pizza.name} to ${customer.phoneNumber}`);
 }
 
-// Send product images with improved error handling
-async function sendProductImage(product, phoneNumber) {
+// Show salad details
+async function showSaladDetails(customer, salad, message) {
   try {
-    if (product.images && product.images.length > 0) {
-      const image = product.images[0];
-
-      if (image.base64) {
-        const media = new MessageMedia(
-          image.mimeType || "image/jpeg",
-          image.base64,
-          `${product.name}.jpg`
-        );
-        const caption = `🍕 *${
-          product.name
-        }*\n💰 Starting at $${product.price.toFixed(
-          2
-        )}\n\n🤖 *ChatBiz Automation*\n📱 Instant ordering, perfect results!`;
-        await client.sendMessage(phoneNumber, media, { caption });
-        console.log(`📸 Sent image for ${product.name} to ${phoneNumber}`);
-      } else if (image.url) {
-        const imageUrl = image.url.startsWith("http")
-          ? image.url
-          : `http://localhost:5000${image.url}`;
-
-        const media = await MessageMedia.fromUrl(imageUrl);
-        const caption = `🍕 *${
-          product.name
-        }*\n💰 Starting at $${product.price.toFixed(
-          2
-        )}\n\n🤖 *ChatBiz Automation*\n📱 Instant ordering, perfect results!`;
-        await client.sendMessage(phoneNumber, media, { caption });
-        console.log(`📸 Sent image for ${product.name} to ${phoneNumber}`);
-      }
+    // Send product image first
+    if (salad.images && salad.images.length > 0) {
+      await sendProductImage(salad, message.from);
     }
+
+    const response = `🥗 *${salad.name.toUpperCase()}* 🥗
+
+┌─────────────────────────────┐
+│      *🌱 SALAD DETAILS 🌱*      │
+└─────────────────────────────┘
+
+📝 *Description:*
+${salad.description}
+
+${
+  salad.specifications?.ingredients
+    ? `🥬 *Ingredients:* ${salad.specifications.ingredients}\n`
+    : ""
+}
+${
+  salad.specifications?.servings
+    ? `👥 *Serves:* ${salad.specifications.servings}\n`
+    : ""
+}
+${
+  salad.specifications?.allergens
+    ? `⚠️ *Allergens:* ${salad.specifications.allergens}\n`
+    : ""
+}
+
+💰 *Price: ${salad.price.toFixed(2)}*
+
+*What would you like to do?*
+
+1️⃣ ✅ *Add to Cart*
+2️⃣ 🔙 *Back to Salad Menu*
+
+*Select an option (1-2)*
+
+🚀 *ChatBiz:* Fresh ingredients, perfect nutrition!
+
+💡 Type *"0"* to return to main menu`;
+
+    await message.reply(response);
+
+    // Update customer state for salad selection
+    customer.conversationState = "product_details";
+    customer.currentContext.selectedSalad = salad;
+    await customer.save();
+
+    console.log(
+      `🥗 Showed details for ${salad.name} to ${customer.phoneNumber}`
+    );
   } catch (error) {
-    console.error(`❌ Error sending image for ${product.name}:`, error);
-    // Continue without image - don't break the flow
+    console.error("❌ Error showing salad details:", error);
   }
 }
 
-// Handle product details (pizza size selection) - FIXED PRICE VALIDATION
+// Show beverage details
+async function showBeverageDetails(customer, beverage, message) {
+  try {
+    // Send product image if available
+    if (beverage.images && beverage.images.length > 0) {
+      await sendProductImage(beverage, message.from);
+    }
+
+    const response = `🥤 *${beverage.name.toUpperCase()}* 🥤
+
+┌─────────────────────────────┐
+│    *🍹 BEVERAGE DETAILS 🍹*     │
+└─────────────────────────────┘
+
+📝 *Description:*
+${
+  beverage.description ||
+  "Refreshing beverage to complement your meal perfectly"
+}
+
+${
+  beverage.specifications?.servings
+    ? `👥 *Size:* ${beverage.specifications.servings}\n`
+    : ""
+}
+${
+  beverage.specifications?.ingredients
+    ? `🥤 *Contains:* ${beverage.specifications.ingredients}\n`
+    : ""
+}
+
+💰 *Price: ${beverage.price.toFixed(2)}*
+
+*What would you like to do?*
+
+1️⃣ ✅ *Add to Cart*
+2️⃣ 🔙 *Back to Beverage Menu*
+
+*Select an option (1-2)*
+
+🚀 *ChatBiz:* Perfect drink for your perfect meal!
+
+💡 Type *"0"* to return to main menu`;
+
+    await message.reply(response);
+
+    // Update customer state for beverage selection
+    customer.conversationState = "product_details";
+    customer.currentContext.selectedBeverage = beverage;
+    await customer.save();
+
+    console.log(
+      `🥤 Showed details for ${beverage.name} to ${customer.phoneNumber}`
+    );
+  } catch (error) {
+    console.error("❌ Error showing beverage details:", error);
+  }
+}
+
+// Show special details
+async function showSpecialDetails(customer, special, message) {
+  const response = `🔥 *${special.name.toUpperCase()}* 🔥
+
+┌─────────────────────────────┐
+│      *💥 SPECIAL DEAL 💥*       │
+└─────────────────────────────┘
+
+📝 *What's Included:*
+${special.description}
+
+📖 *Details:*
+${special.details || "Limited time offer with amazing savings!"}
+
+${
+  special.originalPrice
+    ? `🏷️ *Regular Price: ${special.originalPrice.toFixed(2)}*\n`
+    : ""
+}
+💰 *Special Price: ${special.price.toFixed(2)}*
+${
+  special.originalPrice
+    ? `💸 *You Save: ${(special.originalPrice - special.price).toFixed(2)}*\n`
+    : ""
+}
+
+*What would you like to do?*
+
+1️⃣ ✅ *Add to Cart*
+2️⃣ 🔙 *Back to Specials Menu*
+
+*Select an option (1-2)*
+
+🚀 *ChatBiz:* Best deals updated automatically!
+
+💡 Type *"0"* to return to main menu`;
+
+  await message.reply(response);
+
+  // Update customer state for special selection
+  customer.conversationState = "product_details";
+  customer.currentContext.selectedSpecial = special;
+  await customer.save();
+
+  console.log(
+    `🔥 Showed special details for ${special.name} to ${customer.phoneNumber}`
+  );
+}
+
+// Show pasta details
+async function showPastaDetails(customer, pasta, message) {
+  const response = `🍝 *${pasta.name.toUpperCase()}* 🍝
+
+┌─────────────────────────────┐
+│    *🇮🇹 PASTA DETAILS 🇮🇹*       │
+└─────────────────────────────┘
+
+📝 *Description:*
+${pasta.description}
+
+💰 *Price: ${pasta.price.toFixed(2)}*
+
+*What would you like to do?*
+
+1️⃣ ✅ *Add to Cart*
+2️⃣ 🔙 *Back to Pasta Menu*
+
+*Select an option (1-2)*
+
+🚀 *ChatBiz:* Authentic Italian made fresh!
+
+💡 Type *"0"* to return to main menu`;
+
+  await message.reply(response);
+
+  // Update customer state for pasta selection
+  customer.conversationState = "product_details";
+  customer.currentContext.selectedPasta = pasta;
+  await customer.save();
+
+  console.log(
+    `🍝 Showed pasta details for ${pasta.name} to ${customer.phoneNumber}`
+  );
+}
+
+// Show appetizer details
+async function showAppetizerDetails(customer, appetizer, message) {
+  const response = `🥖 *${appetizer.name.toUpperCase()}* 🥖
+
+┌─────────────────────────────┐
+│   *🍗 APPETIZER DETAILS 🍗*     │
+└─────────────────────────────┘
+
+📝 *Description:*
+${appetizer.description}
+
+💰 *Price: ${appetizer.price.toFixed(2)}*
+
+*What would you like to do?*
+
+1️⃣ ✅ *Add to Cart*
+2️⃣ 🔙 *Back to Appetizers Menu*
+
+*Select an option (1-2)*
+
+🚀 *ChatBiz:* Perfect way to start your meal!
+
+💡 Type *"0"* to return to main menu`;
+
+  await message.reply(response);
+
+  // Update customer state for appetizer selection
+  customer.conversationState = "product_details";
+  customer.currentContext.selectedAppetizer = appetizer;
+  await customer.save();
+
+  console.log(
+    `🥖 Showed appetizer details for ${appetizer.name} to ${customer.phoneNumber}`
+  );
+}
+
+// Handle product details (size selection, add to cart)
 async function handleProductDetails(customer, messageText, message) {
   const choice = parseInt(messageText.trim());
 
@@ -730,7 +1223,6 @@ async function handleProductDetails(customer, messageText, message) {
         'Extra Large (16")',
       ];
 
-      // CRITICAL: Ensure basePrice is a valid number
       const basePrice = Number(pizza.basePrice);
       if (isNaN(basePrice)) {
         console.error(
@@ -743,7 +1235,6 @@ async function handleProductDetails(customer, messageText, message) {
       }
 
       const prices = [basePrice, basePrice + 4, basePrice + 8, basePrice + 12];
-
       const selectedSize = sizes[choice - 1];
       const selectedPrice = prices[choice - 1];
 
@@ -836,9 +1327,56 @@ async function handleProductDetails(customer, messageText, message) {
       await showSpecialsMenu(customer, message);
     }
   }
+  // Handle pasta selection
+  else if (customer.currentContext.selectedPasta) {
+    if (choice === 1) {
+      const pasta = customer.currentContext.selectedPasta;
+      const pastaPrice = Number(pasta.price);
+
+      if (isNaN(pastaPrice)) {
+        console.error(`❌ Invalid pasta price: ${pasta.price}`);
+        await message.reply(
+          '❌ *Price error for this item* \n\nPlease try selecting another item!\n\n💡 Type *"0"* to return to main menu'
+        );
+        return;
+      }
+
+      await addToCartAndShowOptions(customer, pasta.name, pastaPrice, message);
+    } else if (choice === 2) {
+      customer.conversationState = "browsing_pasta";
+      await customer.save();
+      await showPastaMenu(customer, message);
+    }
+  }
+  // Handle appetizer selection
+  else if (customer.currentContext.selectedAppetizer) {
+    if (choice === 1) {
+      const appetizer = customer.currentContext.selectedAppetizer;
+      const appetizerPrice = Number(appetizer.price);
+
+      if (isNaN(appetizerPrice)) {
+        console.error(`❌ Invalid appetizer price: ${appetizer.price}`);
+        await message.reply(
+          '❌ *Price error for this item* \n\nPlease try selecting another item!\n\n💡 Type *"0"* to return to main menu'
+        );
+        return;
+      }
+
+      await addToCartAndShowOptions(
+        customer,
+        appetizer.name,
+        appetizerPrice,
+        message
+      );
+    } else if (choice === 2) {
+      customer.conversationState = "browsing_appetizers";
+      await customer.save();
+      await showAppetizerMenu(customer, message);
+    }
+  }
 }
 
-// UNIFIED ADD TO CART FUNCTION
+// Add to cart and show options
 async function addToCartAndShowOptions(customer, productName, price, message) {
   try {
     if (!customer.cart) {
@@ -855,10 +1393,9 @@ async function addToCartAndShowOptions(customer, productName, price, message) {
     customer.cart.items.push(cartItem);
     customer.cart.totalAmount += price;
 
-    // CRITICAL: Set state to customization with a special flag
+    // Set state to "customization" for post-cart actions
     customer.conversationState = "customization";
     customer.currentContext = {
-      postCartAction: true,
       lastAddedItem: productName,
     };
     await customer.save();
@@ -870,7 +1407,7 @@ async function addToCartAndShowOptions(customer, productName, price, message) {
 └─────────────────────────────┘
 
 🍕 *${productName}*
-💰 $${price.toFixed(2)}
+💰 ${price.toFixed(2)}
 
 🛒 *Cart Total: ${customer.cart.totalAmount.toFixed(2)}*
 
@@ -896,221 +1433,42 @@ async function addToCartAndShowOptions(customer, productName, price, message) {
   }
 }
 
-// Handle salad browsing - SHOW DETAILS WHEN SELECTED
-async function handleSaladBrowsing(customer, messageText, message) {
-  const choice = parseInt(messageText.trim());
-  const salads = customer.currentContext?.salads || [];
-
-  if (choice >= 1 && choice <= salads.length) {
-    const selectedSalad = salads[choice - 1];
-    await showSaladDetails(customer, selectedSalad, message);
-  } else {
-    await message.reply(
-      `❌ *Invalid choice!*\n\nPlease select option 1-${salads.length} from the salad menu 👆\n\n🤖 *ChatBiz:* We help you find the perfect salad!\n\n💡 Type *"0"* to return to main menu`
-    );
-  }
-}
-
-// Show salad details with image - FROM DATABASE
-async function showSaladDetails(customer, salad, message) {
+// Send product images
+async function sendProductImage(product, phoneNumber) {
   try {
-    // Send product image first
-    if (salad.images && salad.images.length > 0) {
-      await sendProductImage(salad, message.from);
+    if (product.images && product.images.length > 0) {
+      const image = product.images[0];
+
+      if (image.base64) {
+        const media = new MessageMedia(
+          image.mimeType || "image/jpeg",
+          image.base64,
+          `${product.name}.jpg`
+        );
+        const caption = `🍕 *${
+          product.name
+        }*\n💰 Starting at ${product.price.toFixed(
+          2
+        )}\n\n🤖 *ChatBiz Automation*\n📱 Instant ordering, perfect results!`;
+        await client.sendMessage(phoneNumber, media, { caption });
+        console.log(`📸 Sent image for ${product.name} to ${phoneNumber}`);
+      } else if (image.url) {
+        const imageUrl = image.url.startsWith("http")
+          ? image.url
+          : `http://localhost:5000${image.url}`;
+        const media = await MessageMedia.fromUrl(imageUrl);
+        const caption = `🍕 *${
+          product.name
+        }*\n💰 Starting at ${product.price.toFixed(
+          2
+        )}\n\n🤖 *ChatBiz Automation*\n📱 Instant ordering, perfect results!`;
+        await client.sendMessage(phoneNumber, media, { caption });
+        console.log(`📸 Sent image for ${product.name} to ${phoneNumber}`);
+      }
     }
-
-    const response = `🥗 *${salad.name.toUpperCase()}* 🥗
-
-┌─────────────────────────────┐
-│      *🌱 SALAD DETAILS 🌱*      │
-└─────────────────────────────┘
-
-📝 *Description:*
-${salad.description}
-
-${
-  salad.specifications?.ingredients
-    ? `🥬 *Ingredients:* ${salad.specifications.ingredients}\n`
-    : ""
-}
-${
-  salad.specifications?.servings
-    ? `👥 *Serves:* ${salad.specifications.servings}\n`
-    : ""
-}
-${
-  salad.specifications?.allergens
-    ? `⚠️ *Allergens:* ${salad.specifications.allergens}\n`
-    : ""
-}
-
-💰 *Price: ${salad.price.toFixed(2)}*
-
-*What would you like to do?*
-
-1️⃣ ✅ *Add to Cart*
-2️⃣ 🔙 *Back to Salad Menu*
-
-*Select an option (1-2)*
-
-🚀 *ChatBiz:* Fresh ingredients, perfect nutrition!
-
-💡 Type *"0"* to return to main menu`;
-
-    await message.reply(response);
-
-    // Update customer state for salad selection
-    customer.conversationState = "product_details";
-    customer.currentContext.selectedSalad = salad;
-    await customer.save();
-
-    console.log(
-      `🥗 Showed details for ${salad.name} to ${customer.phoneNumber}`
-    );
   } catch (error) {
-    console.error("❌ Error showing salad details:", error);
+    console.error(`❌ Error sending image for ${product.name}:`, error);
   }
-}
-
-// Handle beverage browsing - SHOW DETAILS WHEN SELECTED
-async function handleBeverageBrowsing(customer, messageText, message) {
-  const choice = parseInt(messageText.trim());
-  const beverages = customer.currentContext?.beverages || [];
-
-  if (choice >= 1 && choice <= beverages.length) {
-    const selectedBeverage = beverages[choice - 1];
-    await showBeverageDetails(customer, selectedBeverage, message);
-  } else {
-    await message.reply(
-      `❌ *Invalid choice!*\n\nPlease select option 1-${beverages.length} from the beverage menu 👆\n\n🤖 *ChatBiz:* Perfect drink pairings await!\n\n💡 Type *"0"* to return to main menu`
-    );
-  }
-}
-
-// Show beverage details - FROM DATABASE
-async function showBeverageDetails(customer, beverage, message) {
-  try {
-    // Send product image if available
-    if (beverage.images && beverage.images.length > 0) {
-      await sendProductImage(beverage, message.from);
-    }
-
-    const response = `🥤 *${beverage.name.toUpperCase()}* 🥤
-
-┌─────────────────────────────┐
-│    *🍹 BEVERAGE DETAILS 🍹*     │
-└─────────────────────────────┘
-
-📝 *Description:*
-${
-  beverage.description ||
-  "Refreshing beverage to complement your meal perfectly"
-}
-
-${
-  beverage.specifications?.servings
-    ? `👥 *Size:* ${beverage.specifications.servings}\n`
-    : ""
-}
-${
-  beverage.specifications?.ingredients
-    ? `🥤 *Contains:* ${beverage.specifications.ingredients}\n`
-    : ""
-}
-
-💰 *Price: ${beverage.price.toFixed(2)}*
-
-*What would you like to do?*
-
-1️⃣ ✅ *Add to Cart*
-2️⃣ 🔙 *Back to Beverage Menu*
-
-*Select an option (1-2)*
-
-🚀 *ChatBiz:* Perfect drink for your perfect meal!
-
-💡 Type *"0"* to return to main menu`;
-
-    await message.reply(response);
-
-    // Update customer state for beverage selection
-    customer.conversationState = "product_details";
-    customer.currentContext.selectedBeverage = beverage;
-    await customer.save();
-
-    console.log(
-      `🥤 Showed details for ${beverage.name} to ${customer.phoneNumber}`
-    );
-  } catch (error) {
-    console.error("❌ Error showing beverage details:", error);
-  }
-}
-
-// Handle specials browsing
-async function handleSpecialsBrowsing(customer, messageText, message) {
-  const choice = parseInt(messageText.trim());
-  const specials =
-    customer.currentContext?.specials ||
-    customer.currentContext?.defaultSpecials ||
-    [];
-
-  if (choice >= 1 && choice <= specials.length) {
-    const selectedSpecial = specials[choice - 1];
-    await showSpecialDetails(customer, selectedSpecial, message);
-  } else {
-    await message.reply(
-      `❌ *Invalid choice!*\n\nPlease select option 1-${specials.length} from the specials menu 👆\n\n🤖 *ChatBiz:* Amazing deals waiting for you!\n\n💡 Type *"0"* to return to main menu`
-    );
-  }
-}
-
-// Show special details
-async function showSpecialDetails(customer, special, message) {
-  const response = `🔥 *${special.name.toUpperCase()}* 🔥
-
-┌─────────────────────────────┐
-│      *💥 SPECIAL DEAL 💥*       │
-└─────────────────────────────┘
-
-📝 *What's Included:*
-${special.description}
-
-📖 *Details:*
-${special.details || "Limited time offer with amazing savings!"}
-
-${
-  special.originalPrice
-    ? `🏷️ *Regular Price: ${special.originalPrice.toFixed(2)}*\n`
-    : ""
-}
-💰 *Special Price: ${special.price.toFixed(2)}*
-${
-  special.originalPrice
-    ? `💸 *You Save: ${(special.originalPrice - special.price).toFixed(2)}*\n`
-    : ""
-}
-
-*What would you like to do?*
-
-1️⃣ ✅ *Add to Cart*
-2️⃣ 🔙 *Back to Specials Menu*
-
-*Select an option (1-2)*
-
-🚀 *ChatBiz:* Best deals updated automatically!
-
-💡 Type *"0"* to return to main menu`;
-
-  await message.reply(response);
-
-  // Update customer state for special selection
-  customer.conversationState = "product_details";
-  customer.currentContext.selectedSpecial = special;
-  await customer.save();
-
-  console.log(
-    `🔥 Showed special details for ${special.name} to ${customer.phoneNumber}`
-  );
 }
 
 // Show cart and checkout
@@ -1165,7 +1523,7 @@ async function showCartAndCheckout(customer, message) {
   response += `\n\n💡 Type *"0"* to return to main menu`;
 
   customer.conversationState = "cart_view";
-  customer.currentContext = {}; // Clear any flags
+  customer.currentContext = {};
   await customer.save();
 
   await message.reply(response);
@@ -1176,7 +1534,7 @@ async function showCartAndCheckout(customer, message) {
   );
 }
 
-// FIXED CART VIEW HANDLER
+// Handle cart view
 async function handleCartView(customer, messageText, message) {
   const choice = messageText.trim();
 
@@ -1240,49 +1598,6 @@ async function handleCartView(customer, messageText, message) {
         );
         break;
     }
-  }
-}
-
-// Update processCustomerMessage to include customization handler
-async function processCustomerMessage(customer, messageText, message) {
-  try {
-    // SPECIAL HANDLER: Check if we're in post-add-to-cart state
-    if (customer.currentContext?.postCartAction) {
-      await handlePostAddActions(customer, messageText, message);
-      return;
-    }
-
-    switch (customer.conversationState) {
-      case "main_menu":
-        await handleMainMenu(customer, messageText, message);
-        break;
-      case "browsing_pizzas":
-        await handlePizzaBrowsing(customer, messageText, message);
-        break;
-      case "browsing_salads":
-        await handleSaladBrowsing(customer, messageText, message);
-        break;
-      case "browsing_beverages":
-        await handleBeverageBrowsing(customer, messageText, message);
-        break;
-      case "browsing_specials":
-        await handleSpecialsBrowsing(customer, messageText, message);
-        break;
-      case "product_details":
-        await handleProductDetails(customer, messageText, message);
-        break;
-      case "cart_view":
-        await handleCartView(customer, messageText, message);
-        break;
-      case "delivery_details":
-        await handleDeliveryDetails(customer, messageText, message);
-        break;
-      default:
-        await sendMainMenu(customer, message);
-        break;
-    }
-  } catch (error) {
-    console.error("❌ Error processing customer message:", error);
   }
 }
 
@@ -1509,103 +1824,6 @@ async function sendMainMenu(customer, message) {
 💡 Type *"0"* anytime to return to this menu`;
 
   await message.reply(menuMessage);
-}
-
-// Placeholder functions for pasta and sides menus
-async function showPastaMenu(customer, message) {
-  try {
-    // Try to get pasta from database first
-    const pasta = await Product.find({
-      category: "pasta",
-      availability: true,
-    }).limit(8);
-
-    let response = `🍝 *PASTA & ITALIAN CLASSICS* 🍝
-
-┌─────────────────────────────┐
-│    *🇮🇹 AUTHENTIC ITALIAN 🇮🇹*   │
-└─────────────────────────────┘
-`;
-
-    if (pasta.length > 0) {
-      pasta.forEach((item, index) => {
-        response += `\n${index + 1}️⃣ *${item.name}* - ${item.price.toFixed(
-          2
-        )}`;
-        response += `\n   📝 ${item.description.substring(0, 40)}...`;
-      });
-    } else {
-      // Fallback items
-      response += `
-1️⃣ *Spaghetti Carbonara* - $14.99
-   🥓 Creamy sauce with bacon & parmesan
-
-2️⃣ *Fettuccine Alfredo* - $13.99
-   🧄 Rich garlic cream sauce
-
-3️⃣ *Penne Arrabbiata* - $12.99
-   🌶️ Spicy tomato sauce with herbs
-
-4️⃣ *Lasagna Classic* - $16.99
-   🧀 Layered with meat sauce & cheese`;
-    }
-
-    response += `\n\n5️⃣ 🔙 *Back to Pizza Menu*`;
-    response += `\n\n*Type the number to view details & order!* 🛒`;
-    response += `\n\n💡 Type *"0"* to return to main menu`;
-
-    await message.reply(response);
-  } catch (error) {
-    console.error("❌ Error loading pasta menu:", error);
-  }
-}
-
-async function showSidesMenu(customer, message) {
-  try {
-    // Try to get sides from database first
-    const sides = await Product.find({
-      category: "appetizers",
-      availability: true,
-    }).limit(8);
-
-    let response = `🥖 *APPETIZERS & SIDES* 🥖
-
-┌─────────────────────────────┐
-│   *🍗 PERFECT STARTERS 🍗*      │
-└─────────────────────────────┘
-`;
-
-    if (sides.length > 0) {
-      sides.forEach((item, index) => {
-        response += `\n${index + 1}️⃣ *${item.name}* - ${item.price.toFixed(
-          2
-        )}`;
-        response += `\n   📝 ${item.description.substring(0, 40)}...`;
-      });
-    } else {
-      // Fallback items
-      response += `
-1️⃣ *Garlic Bread* - $5.99
-   🧄 Warm bread with garlic butter
-
-2️⃣ *Cheese Breadsticks* - $7.99
-   🧀 Mozzarella-filled breadsticks
-
-3️⃣ *Buffalo Wings* - $9.99
-   🍗 Spicy wings with ranch dip
-
-4️⃣ *Mozzarella Sticks* - $6.99
-   🧀 Crispy fried cheese sticks`;
-    }
-
-    response += `\n\n5️⃣ 🔙 *Back to Pizza Menu*`;
-    response += `\n\n*Type the number to view details & order!* 🛒`;
-    response += `\n\n💡 Type *"0"* to return to main menu`;
-
-    await message.reply(response);
-  } catch (error) {
-    console.error("❌ Error loading sides menu:", error);
-  }
 }
 
 // Initialize the WhatsApp client when the module loads
