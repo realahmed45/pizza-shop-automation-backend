@@ -1208,11 +1208,16 @@ ${appetizer.description}
   );
 }
 
-// Handle product details (size selection, add to cart)
+// Handle product details (size selection, add to cart) - FIXED FOR ALL PRODUCTS
 async function handleProductDetails(customer, messageText, message) {
   const choice = parseInt(messageText.trim());
 
-  // Handle pizza size selection
+  console.log(
+    `🔍 [PRODUCT DETAILS] Choice: ${choice}, Context:`,
+    customer.currentContext
+  );
+
+  // Handle pizza size selection - ONLY PIZZAS HAVE SIZES
   if (customer.currentContext.selectedPizza) {
     if (choice >= 1 && choice <= 4) {
       const pizza = customer.currentContext.selectedPizza;
@@ -1223,17 +1228,7 @@ async function handleProductDetails(customer, messageText, message) {
         'Extra Large (16")',
       ];
 
-      const basePrice = Number(pizza.basePrice);
-      if (isNaN(basePrice)) {
-        console.error(
-          `❌ Invalid base price for pizza ${pizza.name}: ${pizza.basePrice}`
-        );
-        await message.reply(
-          '❌ *Price error for this item* \n\nPlease try selecting another item!\n\n💡 Type *"0"* to return to main menu'
-        );
-        return;
-      }
-
+      const basePrice = parsePrice(pizza.basePrice, pizza.name, 12.99);
       const prices = [basePrice, basePrice + 4, basePrice + 8, basePrice + 12];
       const selectedSize = sizes[choice - 1];
       const selectedPrice = prices[choice - 1];
@@ -1252,29 +1247,46 @@ async function handleProductDetails(customer, messageText, message) {
       customer.conversationState = "browsing_pizzas";
       await customer.save();
       await showPizzaMenu(customer, message);
+    } else {
+      await message.reply(
+        `❌ *Invalid choice!*\n\nPlease select option 1-5 for pizza sizes!\n\n💡 Type *"0"* to return to main menu`
+      );
     }
   }
-  // Handle salad selection - IMPROVED PRICE HANDLING
+  // Handle salad selection - DIRECT ADD TO CART (NO SIZES)
   else if (customer.currentContext.selectedSalad) {
+    console.log(
+      `🥗 [SALAD SELECTION] Processing choice ${choice} for salad:`,
+      customer.currentContext.selectedSalad
+    );
+
     if (choice === 1) {
       const salad = customer.currentContext.selectedSalad;
+      const saladPrice = parsePrice(salad.price, salad.name, 12.99);
 
-      // IMPROVED PRICE PARSING
-      let saladPrice = parsePrice(salad.price, salad.name, 12.99);
-
+      console.log(
+        `🥗 Adding salad to cart: ${salad.name} - Price: $${saladPrice}`
+      );
       await addToCartAndShowOptions(customer, salad.name, saladPrice, message);
     } else if (choice === 2) {
       customer.conversationState = "browsing_salads";
       await customer.save();
       await showSaladMenu(customer, message);
+    } else {
+      await message.reply(
+        `❌ *Invalid choice!*\n\nPlease select option 1 or 2!\n\n💡 Type *"0"* to return to main menu`
+      );
     }
   }
-  // Handle beverage selection - IMPROVED PRICE HANDLING
+  // Handle beverage selection - DIRECT ADD TO CART (NO SIZES)
   else if (customer.currentContext.selectedBeverage) {
     if (choice === 1) {
       const beverage = customer.currentContext.selectedBeverage;
-      let beveragePrice = parsePrice(beverage.price, beverage.name, 2.99);
+      const beveragePrice = parsePrice(beverage.price, beverage.name, 2.99);
 
+      console.log(
+        `🥤 Adding beverage to cart: ${beverage.name} - Price: $${beveragePrice}`
+      );
       await addToCartAndShowOptions(
         customer,
         beverage.name,
@@ -1285,14 +1297,21 @@ async function handleProductDetails(customer, messageText, message) {
       customer.conversationState = "browsing_beverages";
       await customer.save();
       await showBeverageMenu(customer, message);
+    } else {
+      await message.reply(
+        `❌ *Invalid choice!*\n\nPlease select option 1 or 2!\n\n💡 Type *"0"* to return to main menu`
+      );
     }
   }
-  // Handle special selection - IMPROVED PRICE HANDLING
+  // Handle special selection - DIRECT ADD TO CART (NO SIZES)
   else if (customer.currentContext.selectedSpecial) {
     if (choice === 1) {
       const special = customer.currentContext.selectedSpecial;
-      let specialPrice = parsePrice(special.price, special.name, 19.99);
+      const specialPrice = parsePrice(special.price, special.name, 19.99);
 
+      console.log(
+        `🔥 Adding special to cart: ${special.name} - Price: $${specialPrice}`
+      );
       await addToCartAndShowOptions(
         customer,
         special.name,
@@ -1303,27 +1322,41 @@ async function handleProductDetails(customer, messageText, message) {
       customer.conversationState = "browsing_specials";
       await customer.save();
       await showSpecialsMenu(customer, message);
+    } else {
+      await message.reply(
+        `❌ *Invalid choice!*\n\nPlease select option 1 or 2!\n\n💡 Type *"0"* to return to main menu`
+      );
     }
   }
-  // Handle pasta selection - IMPROVED PRICE HANDLING
+  // Handle pasta selection - DIRECT ADD TO CART (NO SIZES)
   else if (customer.currentContext.selectedPasta) {
     if (choice === 1) {
       const pasta = customer.currentContext.selectedPasta;
-      let pastaPrice = parsePrice(pasta.price, pasta.name, 14.99);
+      const pastaPrice = parsePrice(pasta.price, pasta.name, 14.99);
 
+      console.log(
+        `🍝 Adding pasta to cart: ${pasta.name} - Price: $${pastaPrice}`
+      );
       await addToCartAndShowOptions(customer, pasta.name, pastaPrice, message);
     } else if (choice === 2) {
       customer.conversationState = "browsing_pasta";
       await customer.save();
       await showPastaMenu(customer, message);
+    } else {
+      await message.reply(
+        `❌ *Invalid choice!*\n\nPlease select option 1 or 2!\n\n💡 Type *"0"* to return to main menu`
+      );
     }
   }
-  // Handle appetizer selection - IMPROVED PRICE HANDLING
+  // Handle appetizer selection - DIRECT ADD TO CART (NO SIZES)
   else if (customer.currentContext.selectedAppetizer) {
     if (choice === 1) {
       const appetizer = customer.currentContext.selectedAppetizer;
-      let appetizerPrice = parsePrice(appetizer.price, appetizer.name, 7.99);
+      const appetizerPrice = parsePrice(appetizer.price, appetizer.name, 7.99);
 
+      console.log(
+        `🥖 Adding appetizer to cart: ${appetizer.name} - Price: $${appetizerPrice}`
+      );
       await addToCartAndShowOptions(
         customer,
         appetizer.name,
@@ -1334,26 +1367,45 @@ async function handleProductDetails(customer, messageText, message) {
       customer.conversationState = "browsing_appetizers";
       await customer.save();
       await showAppetizerMenu(customer, message);
+    } else {
+      await message.reply(
+        `❌ *Invalid choice!*\n\nPlease select option 1 or 2!\n\n💡 Type *"0"* to return to main menu`
+      );
     }
   }
+  // If no product is selected
+  else {
+    console.log(`⚠️ [PRODUCT DETAILS] No product selected in context`);
+    await message.reply(
+      `❌ *No product selected!*\n\nPlease go back and select a product first.\n\n💡 Type *"0"* to return to main menu`
+    );
+  }
 }
-
-// Add to cart and show options
+// Add to cart and show options - FIXED PRICE DISPLAY
 async function addToCartAndShowOptions(customer, productName, price, message) {
   try {
+    console.log(`🛒 [ADD TO CART] Adding ${productName} for $${price}`);
+
+    // Ensure price is a valid number
+    const validPrice = parseFloat(price);
+    if (isNaN(validPrice)) {
+      console.error(`❌ [ADD TO CART] Invalid price: ${price}`);
+      throw new Error(`Invalid price: ${price}`);
+    }
+
     if (!customer.cart) {
       customer.cart = { items: [], totalAmount: 0 };
     }
 
     const cartItem = {
       productName: productName,
-      price: price,
+      price: validPrice,
       quantity: 1,
       customization: {},
     };
 
     customer.cart.items.push(cartItem);
-    customer.cart.totalAmount += price;
+    customer.cart.totalAmount += validPrice;
 
     // Set state to "customization" for post-cart actions
     customer.conversationState = "customization";
@@ -1369,9 +1421,9 @@ async function addToCartAndShowOptions(customer, productName, price, message) {
 └─────────────────────────────┘
 
 🍕 *${productName}*
-💰 ${price.toFixed(2)}
+💰 $${validPrice.toFixed(2)}
 
-🛒 *Cart Total: ${customer.cart.totalAmount.toFixed(2)}*
+🛒 *Cart Total: $${customer.cart.totalAmount.toFixed(2)}*
 
 *What would you like to do next?*
 
@@ -1386,15 +1438,18 @@ async function addToCartAndShowOptions(customer, productName, price, message) {
 💡 Type *"0"* to return to main menu`;
 
     await message.reply(response);
-    console.log(`🛒 Added ${productName} to cart for ${customer.phoneNumber}`);
+    console.log(
+      `🛒 Successfully added ${productName} ($${validPrice.toFixed(
+        2
+      )}) to cart for ${customer.phoneNumber}`
+    );
   } catch (error) {
     console.error("❌ Error adding to cart:", error);
     await message.reply(
-      '❌ *Error occurred* \n\nPlease try again!\n\n💡 Type *"0"* to return to main menu'
+      '❌ *Error occurred while adding to cart* \n\nPlease try again!\n\n💡 Type *"0"* to return to main menu'
     );
   }
 }
-
 // Send product images
 async function sendProductImage(product, phoneNumber) {
   try {
@@ -1789,36 +1844,37 @@ async function sendMainMenu(customer, message) {
 }
 
 // Helper function to parse and validate prices
-function parsePrice(price, itemName, defaultPrice = 9.99) {
-  let parsedPrice;
-
+function parsePrice(price, itemName = "item", defaultPrice = 9.99) {
   console.log(
-    `💰 Parsing price for ${itemName}: ${price} (type: ${typeof price})`
+    `💰 [PRICE PARSER] Processing ${itemName}: ${price} (type: ${typeof price})`
   );
 
-  if (typeof price === "number") {
+  let parsedPrice;
+
+  if (typeof price === "number" && !isNaN(price) && price > 0) {
     parsedPrice = price;
-  } else if (typeof price === "string") {
+  } else if (typeof price === "string" && price.trim() !== "") {
     // Remove currency symbols, spaces, and convert to number
     parsedPrice = parseFloat(price.replace(/[$,\s]/g, ""));
   } else {
     parsedPrice = defaultPrice;
-    console.log(`🔧 Using default price for ${itemName}: ${defaultPrice}`);
+    console.log(
+      `🔧 [PRICE PARSER] Using default price for ${itemName}: $${defaultPrice}`
+    );
   }
 
   // Final validation
   if (isNaN(parsedPrice) || parsedPrice <= 0) {
     console.error(
-      `❌ Invalid price for ${itemName}: ${price} -> ${parsedPrice}`
+      `❌ [PRICE PARSER] Invalid price for ${itemName}: ${price} -> ${parsedPrice}`
     );
     parsedPrice = defaultPrice;
-    console.log(`🔧 Fallback to default price: ${defaultPrice}`);
+    console.log(`🔧 [PRICE PARSER] Fallback to default: $${defaultPrice}`);
   }
 
-  console.log(`✅ Final price for ${itemName}: ${parsedPrice}`);
+  console.log(`✅ [PRICE PARSER] Final price for ${itemName}: $${parsedPrice}`);
   return parsedPrice;
 }
-
 // Initialize the WhatsApp client when the module loads
 client.initialize().catch(console.error);
 
