@@ -1,8 +1,10 @@
 // ===============================================
 // ROUTES/WHATSAPP.JS - COMPLETE Professional Pizza Shop WhatsApp Automation
+// MIGRATED TO BAILEYS FOR BETTER STABILITY
 // ===============================================
 const express = require("express");
-const { Client, MessageMedia, LocalAuth } = require("whatsapp-web.js");
+// Variables to hold Baileys functions
+let makeWASocket, DisconnectReason, useMultiFileAuthState, downloadMediaMessage;
 const qrcode = require("qrcode-terminal");
 const Customer = require("../Models/customer");
 const Product = require("../Models/Product");
@@ -12,76 +14,127 @@ const path = require("path");
 
 const router = express.Router();
 
-// Initialize WhatsApp Client
-const client = new Client({
-  authStrategy: new LocalAuth(),
-  puppeteer: {
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
-  },
-});
+// Initialize WhatsApp Socket
+let sock;
 
-// QR Code for WhatsApp Web
-client.on("qr", (qr) => {
-  console.log("🍕 ChatBiz Pizza Automation QR Code:");
-  qrcode.generate(qr, { small: true });
-  console.log("📱 Scan this QR code to connect your pizza shop's WhatsApp!");
-});
-
-client.on("ready", () => {
-  console.log("🚀 ChatBiz Pizza Automation is LIVE!");
-  console.log("💰 Your pizza shop is now earning 24/7 with zero staff!");
-});
-
-client.on("disconnected", () => {
-  console.log("⚠️ WhatsApp disconnected - Reconnecting...");
-});
-
-// Main Message Handler
-client.on("message", async (message) => {
-  try {
-    const phoneNumber = message.from.replace("@c.us", "");
-    const messageText = message.body.toLowerCase().trim();
-
-    // Skip group messages and status updates
-    if (message.from.includes("@g.us") || message.from.includes("status")) {
-      return;
-    }
-
-    // Check if customer exists in database
-    let customer = await Customer.findOne({ phoneNumber });
-
-    // If customer doesn't exist, only respond to "menu" or "hi" commands
-    if (!customer) {
-      if (
-        messageText === "menu" ||
-        messageText === "hi" ||
-        messageText === "hello" ||
-        messageText === "start"
-      ) {
-        await handleNewCustomer(phoneNumber, message);
-      }
-      return;
-    }
-
-    // For existing customers, check for "0" to go back to main menu
-    if (messageText === "0") {
-      await handleBackToMainMenu(phoneNumber, message);
-      return;
-    }
-
-    // Handle "menu" command for existing customers
-    if (messageText === "menu" || messageText === "start") {
-      await handleExistingCustomerMenu(phoneNumber, message);
-      return;
-    }
-
-    // Process existing conversations normally
-    await processCustomerMessage(customer, messageText, message);
-  } catch (error) {
-    console.error("❌ Error handling message:", error);
+async function connectToWhatsApp() {
+  // Dynamic import for Baileys ES Module
+  if (!makeWASocket) {
+    const baileys = await import("@whiskeysockets/baileys");
+    makeWASocket = baileys.default;
+    DisconnectReason = baileys.DisconnectReason;
+    useMultiFileAuthState = baileys.useMultiFileAuthState;
+    downloadMediaMessage = baileys.downloadMediaMessage;
   }
-});
+
+  const { state, saveCreds } = await useMultiFileAuthState("auth_info_baileys");
+
+  sock = makeWASocket({
+    auth: state,
+    printQRInTerminal: true,
+    // logger: pino({ level: 'silent' }), // Optional: reduce logs
+  });
+
+  sock.ev.on("creds.update", saveCreds);
+
+  sock.ev.on("connection.update", (update) => {
+    const { connection, lastDisconnect, qr } = update;
+
+    if (qr) {
+      console.log("🍕 ChatBiz Pizza Automation QR Code:");
+      qrcode.generate(qr, { small: true });
+      console.log("📱 Scan this QR code to connect your pizza shop WhatsApp!");
+    }
+
+    if (connection === "close") {
+      const shouldReconnect =
+        lastDisconnect?.error?.output?.statusCode !==
+        DisconnectReason.loggedOut;
+      console.log(
+        "Connection closed due to ",
+        lastDisconnect?.error,
+        ", reconnecting ",
+        shouldReconnect
+      );
+
+      if (shouldReconnect) {
+        connectToWhatsApp(); // Reconnect automatically
+      }
+    } else if (connection === "open") {
+      console.log("🚀 ChatBiz Pizza Automation is LIVE!");
+      console.log("💰 Your pizza shop is now earning 24/7 with zero staff!");
+    }
+  });
+
+  // Main Message Handler
+  sock.ev.on("messages.upsert", async (m) => {
+    const message = m.messages[0];
+    if (!message.message || message.key.fromMe) return;
+
+    try {
+      await handleMessage(message);
+    } catch (error) {
+      console.error("❌ Error handling message:", error);
+    }
+  });
+}
+
+// Message handler function
+async function handleMessage(message) {
+  const phoneNumber = message.key.remoteJid.replace("@s.whatsapp.net", "");
+  const messageText = (
+    message.message?.conversation ||
+    message.message?.extendedTextMessage?.text ||
+    ""
+  )
+    .toLowerCase()
+    .trim();
+
+  // Skip group messages and status updates
+  if (
+    message.key.remoteJid.includes("@g.us") ||
+    message.key.remoteJid.includes("status@broadcast")
+  ) {
+    return;
+  }
+
+  // Check if customer exists in database
+  let customer = await Customer.findOne({ phoneNumber });
+
+  // If customer doesn't exist, only respond to "menu" or "hi" commands
+  if (!customer) {
+    if (
+      messageText === "menu" ||
+      messageText === "hi" ||
+      messageText === "hello" ||
+      messageText === "start"
+    ) {
+      await handleNewCustomer(phoneNumber, message);
+    }
+    return;
+  }
+
+  // For existing customers, check for "0" to go back to main menu
+  if (messageText === "0") {
+    await handleBackToMainMenu(phoneNumber, message);
+    return;
+  }
+
+  // Handle "menu" command for existing customers
+  if (messageText === "menu" || messageText === "start") {
+    await handleExistingCustomerMenu(phoneNumber, message);
+    return;
+  }
+
+  // Process existing conversations normally
+  await processCustomerMessage(customer, messageText, message);
+}
+
+// Send message function
+async function sendMessage(phoneNumber, text) {
+  const jid = phoneNumber + "@s.whatsapp.net";
+  await sock.sendMessage(jid, { text });
+}
 
 // Handle new customer
 async function handleNewCustomer(phoneNumber, message) {
@@ -140,7 +193,7 @@ No waiting, no confusion - just perfect pizza!
 
 💡 Type *"0"* anytime to return to this menu`;
 
-    await message.reply(welcomeMessage);
+    await sendMessage(phoneNumber, welcomeMessage);
   } catch (error) {
     console.error("❌ Error handling new customer:", error);
   }
@@ -179,7 +232,7 @@ async function handleExistingCustomerMenu(phoneNumber, message) {
 
 💡 Type *"0"* anytime to return to this menu`;
 
-    await message.reply(menuMessage);
+    await sendMessage(phoneNumber, menuMessage);
   } catch (error) {
     console.error("❌ Error handling existing customer menu:", error);
   }
@@ -220,7 +273,7 @@ async function handleBackToMainMenu(phoneNumber, message) {
 
 💡 Type *"0"* anytime to return to this menu`;
 
-    await message.reply(menuMessage);
+    await sendMessage(phoneNumber, menuMessage);
   } catch (error) {
     console.error("❌ Error handling back to main menu:", error);
   }
@@ -233,88 +286,93 @@ async function processCustomerMessage(customer, messageText, message) {
       `🔍 Processing message: "${messageText}" | State: ${customer.conversationState}`
     );
 
+    const phoneNumber = message.key.remoteJid.replace("@s.whatsapp.net", "");
+
     switch (customer.conversationState) {
       case "main_menu":
-        await handleMainMenu(customer, messageText, message);
+        await handleMainMenu(customer, messageText, phoneNumber);
         break;
       case "browsing_pizzas":
-        await handlePizzaBrowsing(customer, messageText, message);
+        await handlePizzaBrowsing(customer, messageText, phoneNumber);
         break;
       case "browsing_salads":
-        await handleSaladBrowsing(customer, messageText, message);
+        await handleSaladBrowsing(customer, messageText, phoneNumber);
         break;
       case "browsing_beverages":
-        await handleBeverageBrowsing(customer, messageText, message);
+        await handleBeverageBrowsing(customer, messageText, phoneNumber);
         break;
       case "browsing_specials":
-        await handleSpecialsBrowsing(customer, messageText, message);
+        await handleSpecialsBrowsing(customer, messageText, phoneNumber);
         break;
       case "browsing_pasta":
-        await handlePastaBrowsing(customer, messageText, message);
+        await handlePastaBrowsing(customer, messageText, phoneNumber);
         break;
       case "browsing_appetizers":
-        await handleAppetizersBrowsing(customer, messageText, message);
+        await handleAppetizersBrowsing(customer, messageText, phoneNumber);
         break;
       case "product_details":
-        await handleProductDetails(customer, messageText, message);
+        await handleProductDetails(customer, messageText, phoneNumber);
         break;
       case "customization":
-        await handlePostCartActions(customer, messageText, message);
+        await handlePostCartActions(customer, messageText, phoneNumber);
         break;
       case "cart_view":
-        await handleCartView(customer, messageText, message);
+        await handleCartView(customer, messageText, phoneNumber);
         break;
       case "delivery_details":
-        await handleDeliveryDetails(customer, messageText, message);
+        await handleDeliveryDetails(customer, messageText, phoneNumber);
         break;
       default:
         console.log(
           `⚠️ Unknown state: ${customer.conversationState} - Sending main menu`
         );
-        await sendMainMenu(customer, message);
+        await sendMainMenu(customer, phoneNumber);
         break;
     }
   } catch (error) {
     console.error("❌ Error processing customer message:", error);
-    await message.reply(
+    const phoneNumber = message.key.remoteJid.replace("@s.whatsapp.net", "");
+    await sendMessage(
+      phoneNumber,
       '❌ *Something went wrong!*\n\nType *"0"* to return to main menu'
     );
   }
 }
 
 // Handle main menu selection
-async function handleMainMenu(customer, messageText, message) {
+async function handleMainMenu(customer, messageText, phoneNumber) {
   const choice = messageText.trim();
 
   switch (choice) {
     case "1":
       customer.conversationState = "browsing_pizzas";
       await customer.save();
-      await showPizzaMenu(customer, message);
+      await showPizzaMenu(customer, phoneNumber);
       break;
     case "2":
       customer.conversationState = "browsing_salads";
       await customer.save();
-      await showSaladMenu(customer, message);
+      await showSaladMenu(customer, phoneNumber);
       break;
     case "3":
       customer.conversationState = "browsing_beverages";
       await customer.save();
-      await showBeverageMenu(customer, message);
+      await showBeverageMenu(customer, phoneNumber);
       break;
     case "4":
       customer.conversationState = "browsing_specials";
       await customer.save();
-      await showSpecialsMenu(customer, message);
+      await showSpecialsMenu(customer, phoneNumber);
       break;
     case "5":
-      await showCartAndCheckout(customer, message);
+      await showCartAndCheckout(customer, phoneNumber);
       break;
     case "6":
-      await showContactInfo(customer, message);
+      await showContactInfo(customer, phoneNumber);
       break;
     default:
-      await message.reply(
+      await sendMessage(
+        phoneNumber,
         `❌ *Invalid choice!*\n\nPlease select a valid option (1-6) from the menu above 👆\n\n🤖 *ChatBiz:* Our system guides you every step of the way!\n\n💡 Type *"0"* to return to main menu`
       );
       break;
@@ -322,7 +380,7 @@ async function handleMainMenu(customer, messageText, message) {
 }
 
 // Handle post-cart actions (Continue Shopping, Checkout, View Cart)
-async function handlePostCartActions(customer, messageText, message) {
+async function handlePostCartActions(customer, messageText, phoneNumber) {
   const choice = messageText.trim();
 
   console.log(`🛒 Handling post-cart action: ${choice}`);
@@ -333,21 +391,22 @@ async function handlePostCartActions(customer, messageText, message) {
       customer.conversationState = "main_menu";
       customer.currentContext = {};
       await customer.save();
-      await sendMainMenu(customer, message);
+      await sendMainMenu(customer, phoneNumber);
       break;
     case "2":
       // Proceed to Checkout
       customer.conversationState = "delivery_details";
       customer.currentContext = {};
       await customer.save();
-      await requestDeliveryDetails(customer, message);
+      await requestDeliveryDetails(customer, phoneNumber);
       break;
     case "3":
       // View Full Cart
-      await showCartAndCheckout(customer, message);
+      await showCartAndCheckout(customer, phoneNumber);
       break;
     default:
-      await message.reply(
+      await sendMessage(
+        phoneNumber,
         `❌ *Invalid choice!*\n\nPlease select option 1, 2, or 3 👆\n\n🤖 *ChatBiz:* Choose your next step!\n\n💡 Type *"0"* to return to main menu`
       );
       break;
@@ -355,7 +414,7 @@ async function handlePostCartActions(customer, messageText, message) {
 }
 
 // Show pizza menu
-async function showPizzaMenu(customer, message) {
+async function showPizzaMenu(customer, phoneNumber) {
   try {
     const pizzas = await Product.find({
       category: "pizzas",
@@ -403,21 +462,22 @@ Please check back in a moment!\n`;
     response += `\n\n💡 Type *"0"* to return to main menu`;
 
     await customer.save();
-    await message.reply(response);
+    await sendMessage(phoneNumber, response);
 
     console.log(
       `📋 Sent pizza menu with ${pizzas.length} items to ${customer.phoneNumber}`
     );
   } catch (error) {
     console.error("❌ Error loading pizza menu:", error);
-    await message.reply(
+    await sendMessage(
+      phoneNumber,
       '❌ *Menu temporarily unavailable*\n\nPlease try again in a moment!\n\n💡 Type *"0"* to return to main menu'
     );
   }
 }
 
 // Show salad menu
-async function showSaladMenu(customer, message) {
+async function showSaladMenu(customer, phoneNumber) {
   try {
     const salads = await Product.find({
       category: "salads",
@@ -462,21 +522,22 @@ Our healthy options will be available shortly!\n`;
     response += `\n\n💡 Type *"0"* to return to main menu`;
 
     await customer.save();
-    await message.reply(response);
+    await sendMessage(phoneNumber, response);
 
     console.log(
       `🥗 Sent salad menu with ${salads.length} items to ${customer.phoneNumber}`
     );
   } catch (error) {
     console.error("❌ Error loading salad menu:", error);
-    await message.reply(
+    await sendMessage(
+      phoneNumber,
       '❌ *Salad menu temporarily unavailable*\n\nPlease try again!\n\n💡 Type *"0"* to return to main menu'
     );
   }
 }
 
 // Show beverage menu
-async function showBeverageMenu(customer, message) {
+async function showBeverageMenu(customer, phoneNumber) {
   try {
     const beverages = await Product.find({
       category: "beverages",
@@ -522,21 +583,22 @@ Refreshing options coming soon!\n`;
     response += `\n\n💡 Type *"0"* to return to main menu`;
 
     await customer.save();
-    await message.reply(response);
+    await sendMessage(phoneNumber, response);
 
     console.log(
       `🥤 Sent beverage menu with ${beverages.length} items to ${customer.phoneNumber}`
     );
   } catch (error) {
     console.error("❌ Error loading beverage menu:", error);
-    await message.reply(
+    await sendMessage(
+      phoneNumber,
       '❌ *Beverage menu temporarily unavailable*\n\nPlease try again!\n\n💡 Type *"0"* to return to main menu'
     );
   }
 }
 
 // Show specials menu
-async function showSpecialsMenu(customer, message) {
+async function showSpecialsMenu(customer, phoneNumber) {
   try {
     const specials = await Product.find({
       $or: [
@@ -620,7 +682,7 @@ async function showSpecialsMenu(customer, message) {
     response += `\n\n💡 Type *"0"* to return to main menu`;
 
     await customer.save();
-    await message.reply(response);
+    await sendMessage(phoneNumber, response);
 
     console.log(
       `🔥 Sent specials menu with ${specials.length || 4} items to ${
@@ -629,14 +691,15 @@ async function showSpecialsMenu(customer, message) {
     );
   } catch (error) {
     console.error("❌ Error loading specials menu:", error);
-    await message.reply(
+    await sendMessage(
+      phoneNumber,
       '❌ *Specials menu temporarily unavailable*\n\nPlease try again!\n\n💡 Type *"0"* to return to main menu'
     );
   }
 }
 
 // Show pasta menu
-async function showPastaMenu(customer, message) {
+async function showPastaMenu(customer, phoneNumber) {
   try {
     const pasta = await Product.find({
       category: "pasta",
@@ -699,17 +762,18 @@ async function showPastaMenu(customer, message) {
     response += `\n\n💡 Type *"0"* to return to main menu`;
 
     await customer.save();
-    await message.reply(response);
+    await sendMessage(phoneNumber, response);
   } catch (error) {
     console.error("❌ Error loading pasta menu:", error);
-    await message.reply(
+    await sendMessage(
+      phoneNumber,
       '❌ *Pasta menu temporarily unavailable*\n\nPlease try again!\n\n💡 Type *"0"* to return to main menu'
     );
   }
 }
 
 // Show appetizer menu
-async function showAppetizerMenu(customer, message) {
+async function showAppetizerMenu(customer, phoneNumber) {
   try {
     const appetizers = await Product.find({
       category: "appetizers",
@@ -772,33 +836,35 @@ async function showAppetizerMenu(customer, message) {
     response += `\n\n💡 Type *"0"* to return to main menu`;
 
     await customer.save();
-    await message.reply(response);
+    await sendMessage(phoneNumber, response);
   } catch (error) {
     console.error("❌ Error loading appetizer menu:", error);
-    await message.reply(
+    await sendMessage(
+      phoneNumber,
       '❌ *Appetizer menu temporarily unavailable*\n\nPlease try again!\n\n💡 Type *"0"* to return to main menu'
     );
   }
 }
 
 // Handle pizza browsing
-async function handlePizzaBrowsing(customer, messageText, message) {
+async function handlePizzaBrowsing(customer, messageText, phoneNumber) {
   const choice = parseInt(messageText.trim());
   const products = customer.currentContext?.products || [];
 
   if (choice >= 1 && choice <= products.length) {
     const selectedPizza = products[choice - 1];
-    await showPizzaDetails(customer, selectedPizza, message);
+    await showPizzaDetails(customer, selectedPizza, phoneNumber);
   } else if (choice === products.length + 1) {
     customer.conversationState = "browsing_pasta";
     await customer.save();
-    await showPastaMenu(customer, message);
+    await showPastaMenu(customer, phoneNumber);
   } else if (choice === products.length + 2) {
     customer.conversationState = "browsing_appetizers";
     await customer.save();
-    await showAppetizerMenu(customer, message);
+    await showAppetizerMenu(customer, phoneNumber);
   } else {
-    await message.reply(
+    await sendMessage(
+      phoneNumber,
       `❌ *Invalid choice!*\n\nPlease select option 1-${
         products.length + 2
       } from the pizza menu 👆\n\n🤖 *ChatBiz:* We guide you to the perfect order!\n\n💡 Type *"0"* to return to main menu`
@@ -807,37 +873,39 @@ async function handlePizzaBrowsing(customer, messageText, message) {
 }
 
 // Handle salad browsing
-async function handleSaladBrowsing(customer, messageText, message) {
+async function handleSaladBrowsing(customer, messageText, phoneNumber) {
   const choice = parseInt(messageText.trim());
   const salads = customer.currentContext?.salads || [];
 
   if (choice >= 1 && choice <= salads.length) {
     const selectedSalad = salads[choice - 1];
-    await showSaladDetails(customer, selectedSalad, message);
+    await showSaladDetails(customer, selectedSalad, phoneNumber);
   } else {
-    await message.reply(
+    await sendMessage(
+      phoneNumber,
       `❌ *Invalid choice!*\n\nPlease select option 1-${salads.length} from the salad menu 👆\n\n🤖 *ChatBiz:* We help you find the perfect salad!\n\n💡 Type *"0"* to return to main menu`
     );
   }
 }
 
 // Handle beverage browsing
-async function handleBeverageBrowsing(customer, messageText, message) {
+async function handleBeverageBrowsing(customer, messageText, phoneNumber) {
   const choice = parseInt(messageText.trim());
   const beverages = customer.currentContext?.beverages || [];
 
   if (choice >= 1 && choice <= beverages.length) {
     const selectedBeverage = beverages[choice - 1];
-    await showBeverageDetails(customer, selectedBeverage, message);
+    await showBeverageDetails(customer, selectedBeverage, phoneNumber);
   } else {
-    await message.reply(
+    await sendMessage(
+      phoneNumber,
       `❌ *Invalid choice!*\n\nPlease select option 1-${beverages.length} from the beverage menu 👆\n\n🤖 *ChatBiz:* Perfect drink pairings await!\n\n💡 Type *"0"* to return to main menu`
     );
   }
 }
 
 // Handle specials browsing
-async function handleSpecialsBrowsing(customer, messageText, message) {
+async function handleSpecialsBrowsing(customer, messageText, phoneNumber) {
   const choice = parseInt(messageText.trim());
   const specials =
     customer.currentContext?.specials ||
@@ -846,29 +914,31 @@ async function handleSpecialsBrowsing(customer, messageText, message) {
 
   if (choice >= 1 && choice <= specials.length) {
     const selectedSpecial = specials[choice - 1];
-    await showSpecialDetails(customer, selectedSpecial, message);
+    await showSpecialDetails(customer, selectedSpecial, phoneNumber);
   } else {
-    await message.reply(
+    await sendMessage(
+      phoneNumber,
       `❌ *Invalid choice!*\n\nPlease select option 1-${specials.length} from the specials menu 👆\n\n🤖 *ChatBiz:* Amazing deals waiting for you!\n\n💡 Type *"0"* to return to main menu`
     );
   }
 }
 
 // Handle pasta browsing
-async function handlePastaBrowsing(customer, messageText, message) {
+async function handlePastaBrowsing(customer, messageText, phoneNumber) {
   const choice = parseInt(messageText.trim());
   const pasta = customer.currentContext?.pasta || [];
 
   if (choice >= 1 && choice <= pasta.length) {
     const selectedPasta = pasta[choice - 1];
-    await showPastaDetails(customer, selectedPasta, message);
+    await showPastaDetails(customer, selectedPasta, phoneNumber);
   } else if (choice === pasta.length + 1) {
     // Back to pizza menu
     customer.conversationState = "browsing_pizzas";
     await customer.save();
-    await showPizzaMenu(customer, message);
+    await showPizzaMenu(customer, phoneNumber);
   } else {
-    await message.reply(
+    await sendMessage(
+      phoneNumber,
       `❌ *Invalid choice!*\n\nPlease select option 1-${
         pasta.length + 1
       } from the pasta menu 👆\n\n🤖 *ChatBiz:* Authentic Italian flavors await!\n\n💡 Type *"0"* to return to main menu`
@@ -877,20 +947,21 @@ async function handlePastaBrowsing(customer, messageText, message) {
 }
 
 // Handle appetizers browsing
-async function handleAppetizersBrowsing(customer, messageText, message) {
+async function handleAppetizersBrowsing(customer, messageText, phoneNumber) {
   const choice = parseInt(messageText.trim());
   const appetizers = customer.currentContext?.appetizers || [];
 
   if (choice >= 1 && choice <= appetizers.length) {
     const selectedAppetizer = appetizers[choice - 1];
-    await showAppetizerDetails(customer, selectedAppetizer, message);
+    await showAppetizerDetails(customer, selectedAppetizer, phoneNumber);
   } else if (choice === appetizers.length + 1) {
     // Back to pizza menu
     customer.conversationState = "browsing_pizzas";
     await customer.save();
-    await showPizzaMenu(customer, message);
+    await showPizzaMenu(customer, phoneNumber);
   } else {
-    await message.reply(
+    await sendMessage(
+      phoneNumber,
       `❌ *Invalid choice!*\n\nPlease select option 1-${
         appetizers.length + 1
       } from the appetizers menu 👆\n\n🤖 *ChatBiz:* Perfect starters for your meal!\n\n💡 Type *"0"* to return to main menu`
@@ -899,7 +970,7 @@ async function handleAppetizersBrowsing(customer, messageText, message) {
 }
 
 // Show pizza details with size options
-async function showPizzaDetails(customer, pizza, message) {
+async function showPizzaDetails(customer, pizza, phoneNumber) {
   customer.conversationState = "product_details";
   customer.currentContext.selectedPizza = {
     _id: pizza._id,
@@ -913,7 +984,7 @@ async function showPizzaDetails(customer, pizza, message) {
 
   // Send product image first if available
   if (pizza.images && pizza.images.length > 0) {
-    await sendProductImage(pizza, message.from);
+    await sendProductImage(pizza, phoneNumber);
   }
 
   const response = `🍕 *${pizza.name.toUpperCase()}* 🍕
@@ -963,16 +1034,16 @@ ${
 
 💡 Type *"0"* to return to main menu`;
 
-  await message.reply(response);
+  await sendMessage(phoneNumber, response);
   console.log(`🍕 Showed details for ${pizza.name} to ${customer.phoneNumber}`);
 }
 
 // Show salad details
-async function showSaladDetails(customer, salad, message) {
+async function showSaladDetails(customer, salad, phoneNumber) {
   try {
     // Send product image first
     if (salad.images && salad.images.length > 0) {
-      await sendProductImage(salad, message.from);
+      await sendProductImage(salad, phoneNumber);
     }
 
     const response = `🥗 *${salad.name.toUpperCase()}* 🥗
@@ -1013,7 +1084,7 @@ ${
 
 💡 Type *"0"* to return to main menu`;
 
-    await message.reply(response);
+    await sendMessage(phoneNumber, response);
 
     // Update customer state for salad selection
     customer.conversationState = "product_details";
@@ -1029,11 +1100,11 @@ ${
 }
 
 // Show beverage details
-async function showBeverageDetails(customer, beverage, message) {
+async function showBeverageDetails(customer, beverage, phoneNumber) {
   try {
     // Send product image if available
     if (beverage.images && beverage.images.length > 0) {
-      await sendProductImage(beverage, message.from);
+      await sendProductImage(beverage, phoneNumber);
     }
 
     const response = `🥤 *${beverage.name.toUpperCase()}* 🥤
@@ -1072,7 +1143,7 @@ ${
 
 💡 Type *"0"* to return to main menu`;
 
-    await message.reply(response);
+    await sendMessage(phoneNumber, response);
 
     // Update customer state for beverage selection
     customer.conversationState = "product_details";
@@ -1088,7 +1159,7 @@ ${
 }
 
 // Show special details
-async function showSpecialDetails(customer, special, message) {
+async function showSpecialDetails(customer, special, phoneNumber) {
   const response = `🔥 *${special.name.toUpperCase()}* 🔥
 
 ┌─────────────────────────────┐
@@ -1124,7 +1195,7 @@ ${
 
 💡 Type *"0"* to return to main menu`;
 
-  await message.reply(response);
+  await sendMessage(phoneNumber, response);
 
   // Update customer state for special selection
   customer.conversationState = "product_details";
@@ -1137,7 +1208,7 @@ ${
 }
 
 // Show pasta details
-async function showPastaDetails(customer, pasta, message) {
+async function showPastaDetails(customer, pasta, phoneNumber) {
   const response = `🍝 *${pasta.name.toUpperCase()}* 🍝
 
 ┌─────────────────────────────┐
@@ -1160,7 +1231,7 @@ ${pasta.description}
 
 💡 Type *"0"* to return to main menu`;
 
-  await message.reply(response);
+  await sendMessage(phoneNumber, response);
 
   // Update customer state for pasta selection
   customer.conversationState = "product_details";
@@ -1173,7 +1244,7 @@ ${pasta.description}
 }
 
 // Show appetizer details
-async function showAppetizerDetails(customer, appetizer, message) {
+async function showAppetizerDetails(customer, appetizer, phoneNumber) {
   const response = `🥖 *${appetizer.name.toUpperCase()}* 🥖
 
 ┌─────────────────────────────┐
@@ -1196,7 +1267,7 @@ ${appetizer.description}
 
 💡 Type *"0"* to return to main menu`;
 
-  await message.reply(response);
+  await sendMessage(phoneNumber, response);
 
   // Update customer state for appetizer selection
   customer.conversationState = "product_details";
@@ -1209,7 +1280,7 @@ ${appetizer.description}
 }
 
 // Handle product details (size selection, add to cart) - FIXED FOR ALL PRODUCTS
-async function handleProductDetails(customer, messageText, message) {
+async function handleProductDetails(customer, messageText, phoneNumber) {
   const choice = parseInt(messageText.trim());
 
   console.log(
@@ -1241,14 +1312,15 @@ async function handleProductDetails(customer, messageText, message) {
         customer,
         `${pizza.name} - ${selectedSize}`,
         selectedPrice,
-        message
+        phoneNumber
       );
     } else if (choice === 5) {
       customer.conversationState = "browsing_pizzas";
       await customer.save();
-      await showPizzaMenu(customer, message);
+      await showPizzaMenu(customer, phoneNumber);
     } else {
-      await message.reply(
+      await sendMessage(
+        phoneNumber,
         `❌ *Invalid choice!*\n\nPlease select option 1-5 for pizza sizes!\n\n💡 Type *"0"* to return to main menu`
       );
     }
@@ -1265,15 +1337,21 @@ async function handleProductDetails(customer, messageText, message) {
       const saladPrice = parsePrice(salad.price, salad.name, 12.99);
 
       console.log(
-        `🥗 Adding salad to cart: ${salad.name} - Price: $${saladPrice}`
+        `🥗 Adding salad to cart: ${salad.name} - Price: ${saladPrice}`
       );
-      await addToCartAndShowOptions(customer, salad.name, saladPrice, message);
+      await addToCartAndShowOptions(
+        customer,
+        salad.name,
+        saladPrice,
+        phoneNumber
+      );
     } else if (choice === 2) {
       customer.conversationState = "browsing_salads";
       await customer.save();
-      await showSaladMenu(customer, message);
+      await showSaladMenu(customer, phoneNumber);
     } else {
-      await message.reply(
+      await sendMessage(
+        phoneNumber,
         `❌ *Invalid choice!*\n\nPlease select option 1 or 2!\n\n💡 Type *"0"* to return to main menu`
       );
     }
@@ -1285,20 +1363,21 @@ async function handleProductDetails(customer, messageText, message) {
       const beveragePrice = parsePrice(beverage.price, beverage.name, 2.99);
 
       console.log(
-        `🥤 Adding beverage to cart: ${beverage.name} - Price: $${beveragePrice}`
+        `🥤 Adding beverage to cart: ${beverage.name} - Price: ${beveragePrice}`
       );
       await addToCartAndShowOptions(
         customer,
         beverage.name,
         beveragePrice,
-        message
+        phoneNumber
       );
     } else if (choice === 2) {
       customer.conversationState = "browsing_beverages";
       await customer.save();
-      await showBeverageMenu(customer, message);
+      await showBeverageMenu(customer, phoneNumber);
     } else {
-      await message.reply(
+      await sendMessage(
+        phoneNumber,
         `❌ *Invalid choice!*\n\nPlease select option 1 or 2!\n\n💡 Type *"0"* to return to main menu`
       );
     }
@@ -1310,20 +1389,21 @@ async function handleProductDetails(customer, messageText, message) {
       const specialPrice = parsePrice(special.price, special.name, 19.99);
 
       console.log(
-        `🔥 Adding special to cart: ${special.name} - Price: $${specialPrice}`
+        `🔥 Adding special to cart: ${special.name} - Price: ${specialPrice}`
       );
       await addToCartAndShowOptions(
         customer,
         special.name,
         specialPrice,
-        message
+        phoneNumber
       );
     } else if (choice === 2) {
       customer.conversationState = "browsing_specials";
       await customer.save();
-      await showSpecialsMenu(customer, message);
+      await showSpecialsMenu(customer, phoneNumber);
     } else {
-      await message.reply(
+      await sendMessage(
+        phoneNumber,
         `❌ *Invalid choice!*\n\nPlease select option 1 or 2!\n\n💡 Type *"0"* to return to main menu`
       );
     }
@@ -1335,15 +1415,21 @@ async function handleProductDetails(customer, messageText, message) {
       const pastaPrice = parsePrice(pasta.price, pasta.name, 14.99);
 
       console.log(
-        `🍝 Adding pasta to cart: ${pasta.name} - Price: $${pastaPrice}`
+        `🍝 Adding pasta to cart: ${pasta.name} - Price: ${pastaPrice}`
       );
-      await addToCartAndShowOptions(customer, pasta.name, pastaPrice, message);
+      await addToCartAndShowOptions(
+        customer,
+        pasta.name,
+        pastaPrice,
+        phoneNumber
+      );
     } else if (choice === 2) {
       customer.conversationState = "browsing_pasta";
       await customer.save();
-      await showPastaMenu(customer, message);
+      await showPastaMenu(customer, phoneNumber);
     } else {
-      await message.reply(
+      await sendMessage(
+        phoneNumber,
         `❌ *Invalid choice!*\n\nPlease select option 1 or 2!\n\n💡 Type *"0"* to return to main menu`
       );
     }
@@ -1355,20 +1441,21 @@ async function handleProductDetails(customer, messageText, message) {
       const appetizerPrice = parsePrice(appetizer.price, appetizer.name, 7.99);
 
       console.log(
-        `🥖 Adding appetizer to cart: ${appetizer.name} - Price: $${appetizerPrice}`
+        `🥖 Adding appetizer to cart: ${appetizer.name} - Price: ${appetizerPrice}`
       );
       await addToCartAndShowOptions(
         customer,
         appetizer.name,
         appetizerPrice,
-        message
+        phoneNumber
       );
     } else if (choice === 2) {
       customer.conversationState = "browsing_appetizers";
       await customer.save();
-      await showAppetizerMenu(customer, message);
+      await showAppetizerMenu(customer, phoneNumber);
     } else {
-      await message.reply(
+      await sendMessage(
+        phoneNumber,
         `❌ *Invalid choice!*\n\nPlease select option 1 or 2!\n\n💡 Type *"0"* to return to main menu`
       );
     }
@@ -1376,15 +1463,22 @@ async function handleProductDetails(customer, messageText, message) {
   // If no product is selected
   else {
     console.log(`⚠️ [PRODUCT DETAILS] No product selected in context`);
-    await message.reply(
+    await sendMessage(
+      phoneNumber,
       `❌ *No product selected!*\n\nPlease go back and select a product first.\n\n💡 Type *"0"* to return to main menu`
     );
   }
 }
+
 // Add to cart and show options - FIXED PRICE DISPLAY
-async function addToCartAndShowOptions(customer, productName, price, message) {
+async function addToCartAndShowOptions(
+  customer,
+  productName,
+  price,
+  phoneNumber
+) {
   try {
-    console.log(`🛒 [ADD TO CART] Adding ${productName} for $${price}`);
+    console.log(`🛒 [ADD TO CART] Adding ${productName} for ${price}`);
 
     // Ensure price is a valid number
     const validPrice = parseFloat(price);
@@ -1421,9 +1515,9 @@ async function addToCartAndShowOptions(customer, productName, price, message) {
 └─────────────────────────────┘
 
 🍕 *${productName}*
-💰 $${validPrice.toFixed(2)}
+💰 ${validPrice.toFixed(2)}
 
-🛒 *Cart Total: $${customer.cart.totalAmount.toFixed(2)}*
+🛒 *Cart Total: ${customer.cart.totalAmount.toFixed(2)}*
 
 *What would you like to do next?*
 
@@ -1437,19 +1531,21 @@ async function addToCartAndShowOptions(customer, productName, price, message) {
 
 💡 Type *"0"* to return to main menu`;
 
-    await message.reply(response);
+    await sendMessage(phoneNumber, response);
     console.log(
-      `🛒 Successfully added ${productName} ($${validPrice.toFixed(
+      `🛒 Successfully added ${productName} (${validPrice.toFixed(
         2
       )}) to cart for ${customer.phoneNumber}`
     );
   } catch (error) {
     console.error("❌ Error adding to cart:", error);
-    await message.reply(
+    await sendMessage(
+      phoneNumber,
       '❌ *Error occurred while adding to cart* \n\nPlease try again!\n\n💡 Type *"0"* to return to main menu'
     );
   }
 }
+
 // Send product images
 async function sendProductImage(product, phoneNumber) {
   try {
@@ -1457,29 +1553,34 @@ async function sendProductImage(product, phoneNumber) {
       const image = product.images[0];
 
       if (image.base64) {
-        const media = new MessageMedia(
-          image.mimeType || "image/jpeg",
-          image.base64,
-          `${product.name}.jpg`
-        );
+        const jid = phoneNumber + "@s.whatsapp.net";
+        const imageBuffer = Buffer.from(image.base64, "base64");
         const caption = `🍕 *${
           product.name
         }*\n💰 Starting at ${product.price.toFixed(
           2
         )}\n\n🤖 *ChatBiz Automation*\n📱 Instant ordering, perfect results!`;
-        await client.sendMessage(phoneNumber, media, { caption });
+
+        await sock.sendMessage(jid, {
+          image: imageBuffer,
+          caption: caption,
+        });
         console.log(`📸 Sent image for ${product.name} to ${phoneNumber}`);
       } else if (image.url) {
         const imageUrl = image.url.startsWith("http")
           ? image.url
           : `http://localhost:5000${image.url}`;
-        const media = await MessageMedia.fromUrl(imageUrl);
+        const jid = phoneNumber + "@s.whatsapp.net";
         const caption = `🍕 *${
           product.name
         }*\n💰 Starting at ${product.price.toFixed(
           2
         )}\n\n🤖 *ChatBiz Automation*\n📱 Instant ordering, perfect results!`;
-        await client.sendMessage(phoneNumber, media, { caption });
+
+        await sock.sendMessage(jid, {
+          image: { url: imageUrl },
+          caption: caption,
+        });
         console.log(`📸 Sent image for ${product.name} to ${phoneNumber}`);
       }
     }
@@ -1489,7 +1590,7 @@ async function sendProductImage(product, phoneNumber) {
 }
 
 // Show cart and checkout
-async function showCartAndCheckout(customer, message) {
+async function showCartAndCheckout(customer, phoneNumber) {
   let response = `🛒 *YOUR SHOPPING CART* 🛒
 
 ┌─────────────────────────────┐
@@ -1543,7 +1644,7 @@ async function showCartAndCheckout(customer, message) {
   customer.currentContext = {};
   await customer.save();
 
-  await message.reply(response);
+  await sendMessage(phoneNumber, response);
   console.log(
     `🛒 Showed cart to ${customer.phoneNumber} - ${
       customer.cart?.items?.length || 0
@@ -1552,7 +1653,7 @@ async function showCartAndCheckout(customer, message) {
 }
 
 // Handle cart view
-async function handleCartView(customer, messageText, message) {
+async function handleCartView(customer, messageText, phoneNumber) {
   const choice = messageText.trim();
 
   // Handle normal cart view actions (when cart has items)
@@ -1563,7 +1664,7 @@ async function handleCartView(customer, messageText, message) {
         customer.conversationState = "delivery_details";
         customer.currentContext = {};
         await customer.save();
-        await requestDeliveryDetails(customer, message);
+        await requestDeliveryDetails(customer, phoneNumber);
         break;
       case "2":
         // Clear Cart
@@ -1571,17 +1672,19 @@ async function handleCartView(customer, messageText, message) {
         customer.conversationState = "main_menu";
         customer.currentContext = {};
         await customer.save();
-        await message.reply(
+        await sendMessage(
+          phoneNumber,
           `🗑️ *Cart Cleared Successfully!*\n\n*Ready to start fresh?*\n\nType *"0"* to return to main menu and start ordering! 🛒`
         );
         console.log(`🗑️ Cart cleared for ${customer.phoneNumber}`);
         break;
       case "3":
         // Add More Items - go to main menu
-        await sendMainMenu(customer, message);
+        await sendMainMenu(customer, phoneNumber);
         break;
       default:
-        await message.reply(
+        await sendMessage(
+          phoneNumber,
           `❌ *Invalid choice!*\n\nPlease select option 1-3 👆\n\n🤖 *ChatBiz:* We're here to help!\n\n💡 Type *"0"* to return to main menu`
         );
         break;
@@ -1592,25 +1695,26 @@ async function handleCartView(customer, messageText, message) {
       case "1":
         customer.conversationState = "browsing_pizzas";
         await customer.save();
-        await showPizzaMenu(customer, message);
+        await showPizzaMenu(customer, phoneNumber);
         break;
       case "2":
         customer.conversationState = "browsing_salads";
         await customer.save();
-        await showSaladMenu(customer, message);
+        await showSaladMenu(customer, phoneNumber);
         break;
       case "3":
         customer.conversationState = "browsing_beverages";
         await customer.save();
-        await showBeverageMenu(customer, message);
+        await showBeverageMenu(customer, phoneNumber);
         break;
       case "4":
         customer.conversationState = "browsing_specials";
         await customer.save();
-        await showSpecialsMenu(customer, message);
+        await showSpecialsMenu(customer, phoneNumber);
         break;
       default:
-        await message.reply(
+        await sendMessage(
+          phoneNumber,
           `❌ *Invalid choice!*\n\nPlease select option 1-4 👆\n\n🤖 *ChatBiz:* Let's find something delicious!\n\n💡 Type *"0"* to return to main menu`
         );
         break;
@@ -1619,7 +1723,7 @@ async function handleCartView(customer, messageText, message) {
 }
 
 // Request delivery details
-async function requestDeliveryDetails(customer, message) {
+async function requestDeliveryDetails(customer, phoneNumber) {
   const deliveryFee = customer.cart.totalAmount >= 25 ? 0 : 2.99;
   const finalTotal = customer.cart.totalAmount + deliveryFee;
 
@@ -1657,12 +1761,12 @@ Notes: Ring doorbell twice
 
 💡 Type *"0"* to return to main menu`;
 
-  await message.reply(response);
+  await sendMessage(phoneNumber, response);
   console.log(`📍 Requested delivery details from ${customer.phoneNumber}`);
 }
 
 // Handle delivery details and create order
-async function handleDeliveryDetails(customer, messageText, message) {
+async function handleDeliveryDetails(customer, messageText, phoneNumber) {
   try {
     const orderId = `TP${Date.now()}`;
     const deliveryFee = customer.cart.totalAmount >= 25 ? 0 : 2.99;
@@ -1746,7 +1850,7 @@ async function handleDeliveryDetails(customer, messageText, message) {
 
 🍕 *Enjoy your delicious pizza!* 🍕`;
 
-    await message.reply(confirmationMessage);
+    await sendMessage(phoneNumber, confirmationMessage);
     console.log(
       `✅ Order ${orderId} confirmed for ${
         customer.phoneNumber
@@ -1754,14 +1858,15 @@ async function handleDeliveryDetails(customer, messageText, message) {
     );
   } catch (error) {
     console.error("❌ Error creating order:", error);
-    await message.reply(
+    await sendMessage(
+      phoneNumber,
       `❌ Sorry, there was an error processing your order.\n\nPlease try again!\n\n💡 Type *"0"* to return to main menu`
     );
   }
 }
 
 // Show contact info
-async function showContactInfo(customer, message) {
+async function showContactInfo(customer, phoneNumber) {
   const response = `📞 *TONY'S PIZZA PALACE* 📞
 
 ┌─────────────────────────────┐
@@ -1806,12 +1911,12 @@ async function showContactInfo(customer, message) {
 💡 Type *"MENU"* to continue demo
 💡 Type *"0"* for main menu`;
 
-  await message.reply(response);
+  await sendMessage(phoneNumber, response);
   console.log(`📞 Sent contact info to ${customer.phoneNumber}`);
 }
 
 // Send main menu
-async function sendMainMenu(customer, message) {
+async function sendMainMenu(customer, phoneNumber) {
   customer.conversationState = "main_menu";
   customer.currentContext = {
     productId: null,
@@ -1840,7 +1945,7 @@ async function sendMainMenu(customer, message) {
 
 💡 Type *"0"* anytime to return to this menu`;
 
-  await message.reply(menuMessage);
+  await sendMessage(phoneNumber, menuMessage);
 }
 
 // Helper function to parse and validate prices
@@ -1859,7 +1964,7 @@ function parsePrice(price, itemName = "item", defaultPrice = 9.99) {
   } else {
     parsedPrice = defaultPrice;
     console.log(
-      `🔧 [PRICE PARSER] Using default price for ${itemName}: $${defaultPrice}`
+      `🔧 [PRICE PARSER] Using default price for ${itemName}: ${defaultPrice}`
     );
   }
 
@@ -1869,14 +1974,14 @@ function parsePrice(price, itemName = "item", defaultPrice = 9.99) {
       `❌ [PRICE PARSER] Invalid price for ${itemName}: ${price} -> ${parsedPrice}`
     );
     parsedPrice = defaultPrice;
-    console.log(`🔧 [PRICE PARSER] Fallback to default: $${defaultPrice}`);
+    console.log(`🔧 [PRICE PARSER] Fallback to default: ${defaultPrice}`);
   }
 
-  console.log(`✅ [PRICE PARSER] Final price for ${itemName}: $${parsedPrice}`);
+  console.log(`✅ [PRICE PARSER] Final price for ${itemName}: ${parsedPrice}`);
   return parsedPrice;
 }
-// Initialize the WhatsApp client when the module loads
-client.initialize().catch(console.error);
 
-// Export the router
+// Initialize the WhatsApp connection when the module loads
+connectToWhatsApp().catch(console.error);
+
 module.exports = router;

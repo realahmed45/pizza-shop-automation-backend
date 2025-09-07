@@ -645,13 +645,16 @@ try {
   console.log("⚠️ Admin routes not found, using inline routes");
 }
 
-try {
-  const whatsappRoutes = require("./Routes/Whatsapp");
-  app.use("/api/whatsapp", whatsappRoutes);
-  console.log("✅ WhatsApp routes loaded");
-} catch (error) {
-  console.log("⚠️ WhatsApp routes not found");
-}
+// Replace the current try-catch block with:
+(async () => {
+  try {
+    const { default: whatsappRoutes } = await import("./Routes/Whatsapp.js");
+    app.use("/api/whatsapp", whatsappRoutes);
+    console.log("✅ WhatsApp routes loaded");
+  } catch (error) {
+    console.log("❌ WhatsApp routes error:", error.message);
+  }
+})();
 
 // ===============================================
 // ERROR HANDLING
