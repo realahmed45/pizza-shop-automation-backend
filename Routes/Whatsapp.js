@@ -16,67 +16,111 @@ const router = express.Router();
 
 // Initialize WhatsApp Socket
 let sock;
+// Cleanup on process exit
+process.on("SIGINT", () => {
+  if (connectionInstance) {
+    connectionInstance.end();
+  }
+});
+
+process.on("SIGTERM", () => {
+  if (connectionInstance) {
+    connectionInstance.end();
+  }
+});
+// Add these variables at the top of your WhatsApp router
+let connectionInstance = null;
+let isInitializing = false;
 
 async function connectToWhatsApp() {
-  // Dynamic import for Baileys ES Module
-  if (!makeWASocket) {
-    const baileys = await import("@whiskeysockets/baileys");
-    makeWASocket = baileys.default;
-    DisconnectReason = baileys.DisconnectReason;
-    useMultiFileAuthState = baileys.useMultiFileAuthState;
-    downloadMediaMessage = baileys.downloadMediaMessage;
+  // Prevent multiple simultaneous initializations
+  if (isInitializing || connectionInstance) {
+    console.log("🔄 WhatsApp connection already exists or initializing");
+    return connectionInstance;
   }
 
-  const { state, saveCreds } = await useMultiFileAuthState("auth_info_baileys");
+  isInitializing = true;
 
-  sock = makeWASocket({
-    auth: state,
-    printQRInTerminal: true,
-    // logger: pino({ level: 'silent' }), // Optional: reduce logs
-  });
-
-  sock.ev.on("creds.update", saveCreds);
-
-  sock.ev.on("connection.update", (update) => {
-    const { connection, lastDisconnect, qr } = update;
-
-    if (qr) {
-      console.log("🍕 ChatBiz Pizza Automation QR Code:");
-      qrcode.generate(qr, { small: true });
-      console.log("📱 Scan this QR code to connect your pizza shop WhatsApp!");
+  try {
+    // Dynamic import for Baileys
+    if (!makeWASocket) {
+      const baileys = await import("@whiskeysockets/baileys");
+      makeWASocket = baileys.default;
+      DisconnectReason = baileys.DisconnectReason;
+      useMultiFileAuthState = baileys.useMultiFileAuthState;
+      downloadMediaMessage = baileys.downloadMediaMessage;
     }
 
-    if (connection === "close") {
-      const shouldReconnect =
-        lastDisconnect?.error?.output?.statusCode !==
-        DisconnectReason.loggedOut;
-      console.log(
-        "Connection closed due to ",
-        lastDisconnect?.error,
-        ", reconnecting ",
-        shouldReconnect
-      );
+    const { state, saveCreds } = await useMultiFileAuthState(
+      "auth_info_baileys"
+    );
 
-      if (shouldReconnect) {
-        connectToWhatsApp(); // Reconnect automatically
+    connectionInstance = makeWASocket({
+      auth: state,
+      browser: ["ChatBiz Pizza", "Chrome", "1.0.0"],
+      markOnlineOnConnect: false,
+      // Remove printQRInTerminal as it's deprecated
+    });
+
+    connectionInstance.ev.on("creds.update", saveCreds);
+
+    connectionInstance.ev.on("connection.update", (update) => {
+      const { connection, lastDisconnect, qr } = update;
+
+      if (qr) {
+        console.log("🍕 ChatBiz Pizza Automation QR Code:");
+        qrcode.generate(qr, { small: true });
+        console.log(
+          "📱 Scan this QR code to connect your pizza shop WhatsApp!"
+        );
       }
-    } else if (connection === "open") {
-      console.log("🚀 ChatBiz Pizza Automation is LIVE!");
-      console.log("💰 Your pizza shop is now earning 24/7 with zero staff!");
-    }
-  });
 
-  // Main Message Handler
-  sock.ev.on("messages.upsert", async (m) => {
-    const message = m.messages[0];
-    if (!message.message || message.key.fromMe) return;
+      if (connection === "close") {
+        connectionInstance = null;
+        isInitializing = false;
 
-    try {
-      await handleMessage(message);
-    } catch (error) {
-      console.error("❌ Error handling message:", error);
-    }
-  });
+        const shouldReconnect =
+          lastDisconnect?.error?.output?.statusCode !==
+          DisconnectReason.loggedOut;
+
+        console.log(
+          "Connection closed:",
+          lastDisconnect?.error?.output?.statusCode
+        );
+
+        if (shouldReconnect) {
+          setTimeout(() => {
+            connectToWhatsApp();
+          }, 5000);
+        }
+      } else if (connection === "open") {
+        isInitializing = false;
+        console.log("🚀 ChatBiz Pizza Automation is LIVE!");
+      }
+    });
+
+    // Update the global sock variable
+    sock = connectionInstance;
+
+    // Your message handler code...
+    connectionInstance.ev.on("messages.upsert", async (m) => {
+      const message = m.messages[0];
+      if (!message.message || message.key.fromMe) return;
+
+      try {
+        await handleMessage(message);
+      } catch (error) {
+        console.error("❌ Error handling message:", error);
+      }
+    });
+
+    return connectionInstance;
+  } catch (error) {
+    isInitializing = false;
+    connectionInstance = null;
+    console.error("❌ Error in WhatsApp connection:", error);
+    throw error;
+  }
 }
 
 // Message handler function
